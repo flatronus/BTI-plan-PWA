@@ -1,0 +1,485 @@
+/* ===== Активний інструмент ===== */
+.active-tool {
+    background-color: #dbeafe !important;
+    border-radius: 4px;
+    outline: 2px solid #2196F3;
+}
+
+/* ===== Загальний layout ===== */
+html, body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ===== Тултіпи ===== */
+.toolbar-button:hover .tooltip {
+    display: block;
+}
+
+/* ===== Написи кнопок панелі інструментів ===== */
+/* На мобільних і планшетах — тільки іконки; на десктопі — з написами */
+.toolbar-label {
+    display: none;
+}
+@media (min-width: 1024px) {
+    .toolbar-label {
+        display: inline;
+    }
+}
+
+/* ===== Бічна панель (Елементи + Властивості) ===== */
+.hierarchy-panel {
+    width: 256px;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.2s ease;
+}
+
+/* Прихована панель */
+.hierarchy-panel--hidden {
+    width: 0;
+    border: none;
+    overflow: hidden;
+}
+
+/* Секція панелі */
+.panel-section {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Заголовок секції */
+.panel-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #f3f4f6;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 12px;
+    font-weight: 700;
+    color: #374151;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.panel-header-icon {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+/* Тіло секції з прокруткою */
+.panel-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px;
+}
+
+/* Вузька прокрутка */
+.panel-body::-webkit-scrollbar        { width: 4px; }
+.panel-body::-webkit-scrollbar-track  { background: transparent; }
+.panel-body::-webkit-scrollbar-thumb  { background: #bbb; border-radius: 2px; }
+.panel-body::-webkit-scrollbar-thumb:hover { background: #888; }
+.panel-body                           { scrollbar-width: thin; scrollbar-color: #bbb transparent; }
+
+/* ===== Акордеон бічної панелі ===== */
+
+/* gap між секціями */
+.hierarchy-panel {
+    gap: 2px;
+}
+
+/* Закрита секція — тільки заголовок */
+.accordion-section {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Відкрита секція — займає весь вільний простір */
+.accordion-section.accordion-open {
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+/* Тіло — приховане за замовчуванням */
+.accordion-section .panel-body {
+    display: none;
+}
+
+/* Тіло відкритої секції */
+.accordion-section.accordion-open .panel-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 60px;
+    overflow-y: auto;
+}
+
+/* Заголовок акордеону — закрита панель: блакитний */
+.accordion-header {
+    cursor: pointer;
+    justify-content: space-between;
+    background: #bfdbfe;
+    border-bottom: 1px solid #93c5fd;
+    color: #1e40af;
+}
+
+.accordion-header .panel-header-icon {
+    color: #3b82f6;
+}
+
+/* Заголовок відкритої панелі — темно-синій */
+.accordion-open > .accordion-header {
+    background: #2563eb;
+    border-bottom: 1px solid #1d4ed8;
+    color: #ffffff;
+}
+
+.accordion-open > .accordion-header .panel-header-icon,
+.accordion-open > .accordion-header .accordion-chevron {
+    color: #bfdbfe;
+}
+
+.accordion-header:hover {
+    background: #93c5fd;
+    color: #1e3a8a;
+}
+
+.accordion-open > .accordion-header:hover {
+    background: #1d4ed8;
+}
+
+/* Шеврон */
+.accordion-chevron {
+    font-size: 10px;
+    color: #60a5fa;
+    transition: transform 0.2s ease;
+    margin-left: auto;
+}
+
+.accordion-open .accordion-chevron {
+    transform: rotate(180deg);
+}
+
+/* Елементи ієрархії */
+.hierarchy-item.selected-canvas {
+    outline: 2px solid #ef4444;
+    outline-offset: -2px;
+}
+
+/* На мобільних — не ширше 2/3 екрану */
+@media (max-width: 767px) {
+    .hierarchy-panel {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 200;
+        max-width: 66.666vw;
+        width: 220px;
+        box-shadow: -2px 0 8px rgba(0,0,0,0.15);
+    }
+    .hierarchy-panel--hidden {
+        width: 0;
+        box-shadow: none;
+    }
+}
+
+/* ===== Панель кнопок редактора фігур ===== */
+.shape-modal-toolbar {
+    background: white;
+    border-bottom: 2px solid #ddd;
+    padding: 8px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.shape-modal-title {
+    font-size: 15px;
+    font-weight: bold;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+    .shape-modal-title { display: none; }
+    .shape-modal-toolbar { padding: 6px 8px; gap: 4px; }
+}
+
+/* Кнопки редактора фігур */
+.shape-btn {
+    padding: 8px 12px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 13px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+}
+
+/* Написи всередині кнопок редактора — ховаються на мобільних */
+.shape-btn-label { display: inline; }
+@media (max-width: 767px) {
+    .shape-btn-label { display: none; }
+    .shape-btn { padding: 8px 10px; font-size: 14px; }
+}
+
+.shape-btn-blue   { background: #2196F3; }
+.shape-btn-purple { background: #9C27B0; }
+.shape-btn-orange { background: #FF9800; }
+.shape-btn-cyan   { background: #00BCD4; }
+.shape-btn-green  { background: #4CAF50; }
+.shape-btn-red    { background: #f44336; }
+
+.shape-btn:hover { opacity: 0.88; }
+
+/* ===== Рамка аркуша ===== */
+.paper-frame {
+    filter: drop-shadow(0 0 2px rgba(30, 136, 229, 0.5));
+}
+
+/* ===== Модальні вікна ===== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 10% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 90%;
+    max-width: 600px;
+    border-radius: 8px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal textarea {
+    width: 100%;
+    height: 400px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 10px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 15px;
+}
+
+.modal-buttons button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-copy {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.btn-close {
+    background-color: #f44336;
+    color: white;
+}
+
+/* ===== Ієрархія елементів ===== */
+.hierarchy-item {
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+
+.hierarchy-item:hover {
+    background-color: #f0f0f0;
+}
+
+.hierarchy-item.selected {
+    background-color: #e3f2fd;
+    border-left: 3px solid #2196F3;
+}
+
+.hierarchy-item .icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: #666;
+}
+
+.hierarchy-children {
+    margin-left: 20px;
+    border-left: 1px solid #ddd;
+    padding-left: 8px;
+}
+
+.hierarchy-toggle {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 10px;
+    text-align: center;
+    user-select: none;
+    color: #999;
+}
+
+.hierarchy-toggle:hover {
+    color: #333;
+}
+
+/* ===== Toast-повідомлення ===== */
+#toast-container {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    max-width: 360px;
+    text-align: center;
+}
+
+.toast.show {
+    opacity: 1;
+}
+
+.toast.toast-info    { background-color: #2196F3; }
+.toast.toast-success { background-color: #4CAF50; }
+.toast.toast-warning { background-color: #FF9800; }
+.toast.toast-error   { background-color: #f44336; }
+
+/* ===== PWA / Мобільна адаптація ===== */
+
+/* Safe-area для вирізів та нижньої панелі навігації */
+body {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+}
+
+/* Збільшені touch-цілі для кнопок тулбара на мобільних */
+@media (max-width: 1023px) {
+    .toolbar-button {
+        min-width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px !important;
+    }
+
+    /* Більші touch-цілі для кнопок редактора фігур */
+    .shape-btn {
+        min-width: 40px;
+        min-height: 40px;
+        padding: 10px 12px;
+    }
+}
+
+/* Заборона виділення тексту при drag/touch */
+.toolbar-button,
+.shape-btn,
+.hierarchy-item,
+.accordion-header,
+.panel-header {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+/* Фіксована висота тулбара на мобільних */
+@media (max-width: 767px) {
+    .toolbar-button {
+        padding: 10px !important;
+    }
+}
+
+/* Вкладки: горизонтальний скрол на мобільних без видимого скролбара */
+#tabs-container {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+#tabs-container::-webkit-scrollbar { display: none; }
+
+/* Canvas container — touch scroll */
+#canvas-container {
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+}
+
+/* Модалка координат: textarea зручна на мобільному */
+@media (max-width: 767px) {
+    #coordModal .modal-content {
+        font-size: 16px; /* запобігає zoom при фокусі input на iOS */
+    }
+    #coordInput {
+        font-size: 16px !important;
+    }
+    #diagonalInput {
+        font-size: 16px !important;
+    }
+}
+
+/* Список ліній у редакторі — вужчий на мобільному */
+@media (max-width: 480px) {
+    #shapeCanvasContainer > div[style*="width: 150px"] {
+        width: 110px !important;
+    }
+}
