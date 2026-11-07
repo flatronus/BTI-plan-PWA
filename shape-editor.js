@@ -50,6 +50,16 @@ window.calculateFigureArea = function (figureLines, shapePoints) {
 
     for (const line of figureLines) {
         if (line.isDiagonal || !Array.isArray(line.elements)) continue;
+        if (line.lineType === 'curve') {
+            const height = _getLineCurveHeight(line);
+            const chord = Number(line.length);
+            if (height !== null && Number.isFinite(chord) && chord > 0 && height !== 0) {
+                const radius = (chord * chord + 4 * height * height) / (8 * Math.abs(height));
+                const centralAngle = 4 * Math.atan2(2 * Math.abs(height), chord);
+                area += Math.sign(height) * radius * radius / 2 *
+                    (centralAngle - Math.sin(centralAngle));
+            }
+        }
         for (let i = 0; i < line.elements.length - 2; i++) {
             const start = line.elements[i];
             const end = line.elements[i + 1];
@@ -66,7 +76,14 @@ window.calculateFigureArea = function (figureLines, shapePoints) {
         }
     }
 
-    return area;
+    return Math.max(0, area);
+};
+
+window._getLineCurveHeight = function (lineData) {
+    const values = (lineData.elements || [])
+        .filter(function(element) { return element.type === 'number'; })
+        .map(function(element) { return Number(element.value); });
+    return values.length > 1 && Number.isFinite(values[1]) ? values[1] : null;
 };
 
 /* ── Автомасштабування shapeCanvas ── */
@@ -195,6 +212,13 @@ window.drawLineOnCanvas = function (parsedData) {
     const svg       = document.getElementById('shapeCanvas');
     const lastPoint = G.shapePoints[G.shapePoints.length - 1];
     const isClosing = appState.isClosingLine || false;
+    if (parsedData.lineType === 'curve') {
+        const numericElements = parsedData.elements.filter(function(element) { return element.type === 'number'; });
+        if (numericElements.length < 2 || !Number.isFinite(Number(numericElements[1].value))) {
+            showToast('Для дуги вкажіть основу та висоту окремими числами', 'warning');
+            return;
+        }
+    }
 
     if (parsedData.direction === 'free') {
         const lineLength = parsedData.elements.find(el => el.type === 'number')?.value || 0;
@@ -229,9 +253,12 @@ window.drawLineOnCanvas = function (parsedData) {
     let endX = lastPoint.x, endY = lastPoint.y;
     let lineLength = 0;
 
-    for (let i = parsedData.elements.length - 1; i >= 0; i--) {
-        if (parsedData.elements[i].type === 'number') {
-            lineLength = parseFloat(parsedData.elements[i].value);
+    const lengthElements = parsedData.lineType === 'curve'
+        ? parsedData.elements
+        : parsedData.elements.slice().reverse();
+    for (let i = 0; i < lengthElements.length; i++) {
+        if (lengthElements[i].type === 'number') {
+            lineLength = parseFloat(lengthElements[i].value);
             break;
         }
     }
@@ -245,7 +272,14 @@ window.drawLineOnCanvas = function (parsedData) {
         endX = rel.x; endY = rel.y;
     }
 
-    _renderSvgLine(svg, lastPoint.x, lastPoint.y, endX, endY, G.lineIdCounter);
+    if (parsedData.lineType === 'curve') {
+        const numericElements = parsedData.elements.filter(function(element) { return element.type === 'number'; });
+        const height = Number(numericElements[1]?.value);
+        _renderSvgCurve(svg, lastPoint.x, lastPoint.y, endX, endY, height * SCALE,
+            G.lineIdCounter, G.shapePoints.concat({ x: endX, y: endY }));
+    } else {
+        _renderSvgLine(svg, lastPoint.x, lastPoint.y, endX, endY, G.lineIdCounter);
+    }
     drawLineDimension(lastPoint.x, lastPoint.y, endX, endY, lineLength, null);
     drawElementsOnLine(parsedData, lastPoint.x, lastPoint.y, endX, endY, SCALE);
 
@@ -348,9 +382,20 @@ window.updateExistingLine = function (lineId, parsedData) {
     if (idx === -1) { showToast('Лінію не знайдено', 'error'); return; }
     if (_trySplitFreeLine(idx)) return;
 
+    const lengthElements = parsedData.lineType === 'curve'
+        ? parsedData.elements
+        : parsedData.elements.slice().reverse();
     let newLength = 0;
-    for (let i = parsedData.elements.length - 1; i >= 0; i--) {
-        if (parsedData.elements[i].type === 'number') { newLength = parsedData.elements[i].value; break; }
+    for (let i = 0; i < lengthElements.length; i++) {
+        if (lengthElements[i].type === 'number') { newLength = lengthElements[i].value; break; }
+    }
+    if (parsedData.lineType === 'curve') {
+        const numericElements = parsedData.elements.filter(function(element) { return element.type === 'number'; });
+        const height = Number(numericElements[1]?.value);
+        if (numericElements.length < 2 || !Number.isFinite(height)) {
+            showToast('Для дуги вкажіть основу та висоту окремими числами', 'warning');
+            return;
+        }
     }
 
     if (!G.figureLines[idx].isDiagonal && newLength <= 0) {
@@ -361,7 +406,16 @@ window.updateExistingLine = function (lineId, parsedData) {
     // Якщо лінія має _cachedEnd (зафіксована діагоналлю) — завжди зберігаємо direction='free'
     // і перемасштабовуємо _cachedEnd незалежно від того що ввів користувач у direction.
     // Це запобігає «прокручуванню» лінії при додаванні WI1 або зміні довжини.
-    const hasCachedEnd = !!G.figureLines[idx]._cachedEnd;
+    const lineToEdit = G.figureLines[idx];
+    if (parsedData.direction === 'free' && !lineToEdit._cachedEnd && !lineToEdit.isClosing) {
+        const fromPt = G.shapePoints.find(function(point) { return point.num === lineToEdit.from; });
+        const toPt = G.shapePoints.find(function(point) { return point.num === lineToEdit.to; });
+        if (fromPt && toPt && !fromPt.isTemp && !toPt.isTemp) {
+            lineToEdit._cachedEnd = { x: toPt.x, y: toPt.y };
+            lineToEdit.direction = 'free';
+        }
+    }
+    const hasCachedEnd = !!lineToEdit._cachedEnd;
     if (hasCachedEnd) {
         // Зберігаємо direction=free, оновлюємо лише elements/code/length
         G.figureLines[idx].lineType  = parsedData.lineType;
@@ -572,11 +626,21 @@ window.redrawEntireFigure = function () {
             if (typeof _renderSvgDashedLine === 'function') {
                 _renderSvgDashedLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
             } else {
-                _renderSvgLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
+                if (lineData.lineType === 'curve' && typeof _getLineCurveHeight(lineData) === 'number') {
+                    _renderSvgCurve(svg, fromPt.x, fromPt.y, toPt.x, toPt.y,
+                        _getLineCurveHeight(lineData) * SCALE, lineData.id, G.shapePoints);
+                } else {
+                    _renderSvgLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
+                }
             }
             drawLineDimension(fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.length, lineData);
         } else {
-            _renderSvgLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
+            if (lineData.lineType === 'curve' && typeof _getLineCurveHeight(lineData) === 'number') {
+                _renderSvgCurve(svg, fromPt.x, fromPt.y, toPt.x, toPt.y,
+                    _getLineCurveHeight(lineData) * SCALE, lineData.id, G.shapePoints);
+            } else {
+                _renderSvgLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
+            }
             drawLineDimension(fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.length, lineData);
             drawElementsOnLine(lineData, fromPt.x, fromPt.y, toPt.x, toPt.y, SCALE);
             if (!lineData.isClosing) {

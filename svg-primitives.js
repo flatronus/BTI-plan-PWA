@@ -14,6 +14,40 @@ window._renderSvgLine = function (svg, x1, y1, x2, y2, id) {
     svg.appendChild(line);
 };
 
+window._renderSvgCurve = function (svg, x1, y1, x2, y2, height, id, shapePoints) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const length = Math.hypot(dx, dy);
+    const sagitta = Number(height);
+    if (length === 0 || !Number.isFinite(sagitta)) return;
+    if (sagitta === 0) {
+        _renderSvgLine(svg, x1, y1, x2, y2, id);
+        return;
+    }
+
+    const points = shapePoints.filter(function(point) { return !point.isTemp; });
+    let signedArea = 0;
+    for (let i = 0; i < points.length; i++) {
+        const next = points[(i + 1) % points.length];
+        signedArea += points[i].x * next.y - next.x * points[i].y;
+    }
+
+    const outsideSign = signedArea >= 0 ? -1 : 1;
+    const offset = sagitta * outsideSign;
+    const radius = (length * length + 4 * offset * offset) / (8 * Math.abs(offset));
+    const centralAngle = 4 * Math.atan2(2 * Math.abs(offset), length);
+    const largeArc = centralAngle > Math.PI ? 1 : 0;
+    const sweep = offset > 0 ? 0 : 1;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} ${sweep} ${x2} ${y2}`);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'black');
+    path.setAttribute('stroke-width', '1');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    if (id !== undefined) path.setAttribute('id', `line-${id}`);
+    svg.appendChild(path);
+};
+
 window._renderSvgDashedLine = function (svg, x1, y1, x2, y2, id) {
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', x1); line.setAttribute('y1', y1);

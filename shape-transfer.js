@@ -28,13 +28,18 @@ window._fillSvgGroup = function (group, offsetX, offsetY, parentHierarchyItem) {
         // Діагоналі на головному полотні невидимі
         if (lineData.isDiagonal) return;
 
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
-        line.setAttribute('stroke', 'black');
-        line.setAttribute('stroke-width', '1');
-        line.setAttribute('vector-effect', 'non-scaling-stroke');
-        group.appendChild(line);
+        if (lineData.lineType === 'curve' && typeof _getLineCurveHeight(lineData) === 'number') {
+            _renderSvgCurve(group, x1, y1, x2, y2,
+                _getLineCurveHeight(lineData) * SCALE, lineData.id, G.shapePoints);
+        } else {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+            line.setAttribute('stroke', 'black');
+            line.setAttribute('stroke-width', '1');
+            line.setAttribute('vector-effect', 'non-scaling-stroke');
+            group.appendChild(line);
+        }
 
         const dimFsMm = parentHierarchyItem && parentHierarchyItem.dimensionFontSize != null
             ? parentHierarchyItem.dimensionFontSize : DEFAULT_FONT_SIZE_MM;
