@@ -14,17 +14,13 @@ window._renderSvgLine = function (svg, x1, y1, x2, y2, id) {
     svg.appendChild(line);
 };
 
-window._renderSvgCurve = function (svg, x1, y1, x2, y2, height, id, shapePoints) {
+window._getSvgCurveGeometry = function (x1, y1, x2, y2, height, shapePoints) {
     const dx = x2 - x1, dy = y2 - y1;
     const length = Math.hypot(dx, dy);
     const sagitta = Number(height);
-    if (length === 0 || !Number.isFinite(sagitta)) return;
-    if (sagitta === 0) {
-        _renderSvgLine(svg, x1, y1, x2, y2, id);
-        return;
-    }
+    if (length === 0 || !Number.isFinite(sagitta) || sagitta === 0) return null;
 
-    const points = shapePoints.filter(function(point) { return !point.isTemp; });
+    const points = (shapePoints || []).filter(function(point) { return !point.isTemp; });
     let signedArea = 0;
     for (let i = 0; i < points.length; i++) {
         const next = points[(i + 1) % points.length];
@@ -35,11 +31,64 @@ window._renderSvgCurve = function (svg, x1, y1, x2, y2, height, id, shapePoints)
     const offset = sagitta * outsideSign;
     const radius = (length * length + 4 * offset * offset) / (8 * Math.abs(offset));
     const centralAngle = 4 * Math.atan2(2 * Math.abs(offset), length);
-    const largeArc = centralAngle > Math.PI ? 1 : 0;
-    const sweep = offset > 0 ? 0 : 1;
+    const normalX = -dy / length;
+    const normalY = dx / length;
+    const centerDistance = offset - Math.sign(offset) * radius;
+    const centerX = (x1 + x2) / 2 + normalX * centerDistance;
+    const centerY = (y1 + y2) / 2 + normalY * centerDistance;
+    const startAngle = Math.atan2(y1 - centerY, x1 - centerX);
+    const deltaAngle = (offset > 0 ? -1 : 1) * centralAngle;
+    const arcLength = radius * centralAngle;
+
+    return {
+        radius,
+        centerX,
+        centerY,
+        startAngle,
+        deltaAngle,
+        arcLength,
+        pointAtDistance: function(distance) {
+            const progress = Math.max(0, Math.min(arcLength, distance)) / arcLength;
+            const angle = startAngle + deltaAngle * progress;
+            const tangentSign = Math.sign(deltaAngle);
+            const ux = -Math.sin(angle) * tangentSign;
+            const uy = Math.cos(angle) * tangentSign;
+            return {
+                x: centerX + radius * Math.cos(angle),
+                y: centerY + radius * Math.sin(angle),
+                ux,
+                uy,
+                px: uy,
+                py: -ux
+            };
+        },
+        closestDistance: function(x, y) {
+            const angle = Math.atan2(y - centerY, x - centerX);
+            let progress = deltaAngle > 0
+                ? (angle - startAngle + 2 * Math.PI) % (2 * Math.PI) / deltaAngle
+                : (startAngle - angle + 2 * Math.PI) % (2 * Math.PI) / Math.abs(deltaAngle);
+            if (progress > 1) {
+                const end = this.pointAtDistance(arcLength);
+                const start = this.pointAtDistance(0);
+                return Math.hypot(x - end.x, y - end.y) < Math.hypot(x - start.x, y - start.y)
+                    ? arcLength : 0;
+            }
+            return progress * arcLength;
+        }
+    };
+};
+
+window._renderSvgCurve = function (svg, x1, y1, x2, y2, height, id, shapePoints) {
+    const curve = _getSvgCurveGeometry(x1, y1, x2, y2, height, shapePoints);
+    if (!curve) {
+        _renderSvgLine(svg, x1, y1, x2, y2, id);
+        return;
+    }
+    const largeArc = Math.abs(curve.deltaAngle) > Math.PI ? 1 : 0;
+    const sweep = curve.deltaAngle > 0 ? 1 : 0;
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} ${sweep} ${x2} ${y2}`);
+    path.setAttribute('d', `M ${x1} ${y1} A ${curve.radius} ${curve.radius} 0 ${largeArc} ${sweep} ${x2} ${y2}`);
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', 'black');
     path.setAttribute('stroke-width', '1');

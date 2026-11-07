@@ -281,7 +281,8 @@ window.drawLineOnCanvas = function (parsedData) {
         _renderSvgLine(svg, lastPoint.x, lastPoint.y, endX, endY, G.lineIdCounter);
     }
     drawLineDimension(lastPoint.x, lastPoint.y, endX, endY, lineLength, null);
-    drawElementsOnLine(parsedData, lastPoint.x, lastPoint.y, endX, endY, SCALE);
+    drawElementsOnLine(parsedData, lastPoint.x, lastPoint.y, endX, endY, SCALE, null, undefined,
+        G.shapePoints.concat({ x: endX, y: endY }));
 
     let targetPointNum;
     if (isClosing) {
@@ -642,7 +643,7 @@ window.redrawEntireFigure = function () {
                 _renderSvgLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
             }
             drawLineDimension(fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.length, lineData);
-            drawElementsOnLine(lineData, fromPt.x, fromPt.y, toPt.x, toPt.y, SCALE);
+            drawElementsOnLine(lineData, fromPt.x, fromPt.y, toPt.x, toPt.y, SCALE, null, undefined, G.shapePoints);
             if (!lineData.isClosing) {
                 _renderSvgPoint(svg, toPt.x, toPt.y, toPt.num);
             }

@@ -99,6 +99,10 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
     const ux = dx / len, uy = dy / len;
     const px = uy, py = -ux;
     const elements = lineData.elements || [];
+    const height = typeof _getLineCurveHeight === 'function' ? _getLineCurveHeight(lineData) : null;
+    const curve = lineData.lineType === 'curve' && height !== null
+        ? _getSvgCurveGeometry(x1, y1, x2, y2, height * scale, G.shapePoints)
+        : null;
 
     for (let i = 0; i < elements.length; i++) {
         if (elements[i]?.type     === 'number' &&
@@ -110,10 +114,6 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
             let code    = elements[i+2].value;
             let side    = 1;
             if (code.startsWith('-')) { side = -1; code = code.substring(1); }
-
-            const sx   = x1 + ux * start;
-            const sy   = y1 + uy * start;
-            const elen = end - start;
 
             // Шукаємо існуючий дочірній елемент ієрархії для цього елемента
             const elKey = `wi_${lineData.from}_${lineData.to ?? 'c'}_${code}_${elements[i].value}`;
@@ -180,7 +180,15 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
                 const elThickness = (elItem && elItem.elThickness != null)
                     ? elItem.elThickness
                     : lineThickness;
-                drawArchitecturalElement(elGroup, code, sx, sy, ux, uy, px, py, elen, elThickness * scale, side, true);
+                if (curve) {
+                    drawCurvedArchitecturalElement(elGroup, code, curve, start, end,
+                        elThickness * scale, side, true);
+                } else {
+                    const sx = x1 + ux * start;
+                    const sy = y1 + uy * start;
+                    drawArchitecturalElement(elGroup, code, sx, sy, ux, uy, px, py,
+                        end - start, elThickness * scale, side, true);
+                }
             }
 
             i += 2;

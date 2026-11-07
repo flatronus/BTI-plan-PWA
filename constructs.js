@@ -270,11 +270,47 @@ function _detectSnapLine(clientX, clientY) {
                 x2 = p2.x; y2 = p2.y;
             }
 
-            const dist = _distToSegment(svgPt.x, svgPt.y, x1, y1, x2, y2);
+            let dist;
+            let dropFraction;
+            let curve = null;
+            let curveShapePoints = item.shapePoints.map(function(point) {
+                let transformed = { x: point.x + offsetX, y: point.y + offsetY };
+                return groupCTM ? _applyMatrix(groupCTM, transformed.x, transformed.y) : transformed;
+            });
+            if (lineData.lineType === 'curve' && typeof _getLineCurveHeight === 'function') {
+                const height = _getLineCurveHeight(lineData);
+                if (height !== null) {
+                    curve = _getSvgCurveGeometry(x1, y1, x2, y2, height * SCALE, curveShapePoints);
+                }
+            }
+            if (curve) {
+                let closestDistance = Infinity;
+                let closestFraction = 0;
+                const segmentCount = Math.max(24, Math.ceil(Math.abs(curve.deltaAngle) * 24));
+                let previous = curve.pointAtDistance(0);
+                for (let segment = 0; segment < segmentCount; segment++) {
+                    const nextDistance = curve.arcLength * (segment + 1) / segmentCount;
+                    const next = curve.pointAtDistance(nextDistance);
+                    const t = _projectToLine(svgPt.x, svgPt.y, previous.x, previous.y, next.x, next.y);
+                    const px = previous.x + (next.x - previous.x) * t;
+                    const py = previous.y + (next.y - previous.y) * t;
+                    const segmentDist = Math.hypot(svgPt.x - px, svgPt.y - py);
+                    if (segmentDist < closestDistance) {
+                        closestDistance = segmentDist;
+                        closestFraction = (segment + t) / segmentCount;
+                    }
+                    previous = next;
+                }
+                dist = closestDistance;
+                dropFraction = closestFraction;
+            } else {
+                dist = _distToSegment(svgPt.x, svgPt.y, x1, y1, x2, y2);
+                dropFraction = _projectToLine(svgPt.x, svgPt.y, x1, y1, x2, y2);
+            }
             if (dist < SNAP_THRESHOLD && dist < bestDist) {
                 bestDist = dist;
                 best = { x1, y1, x2, y2, lineData, item, fromPt, toPt, groupCTM, offsetX, offsetY,
-                         dropX: svgPt.x, dropY: svgPt.y };
+                         dropX: svgPt.x, dropY: svgPt.y, dropFraction, curve, curveShapePoints };
             }
         });
     });
@@ -287,9 +323,16 @@ function _detectSnapLine(clientX, clientY) {
 let _cSnapEl = null;
 function _drawSvgSnapHighlight(lineInfo) {
     if (!_cActiveSvg) return;
-    const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    el.setAttribute('x1', lineInfo.x1); el.setAttribute('y1', lineInfo.y1);
-    el.setAttribute('x2', lineInfo.x2); el.setAttribute('y2', lineInfo.y2);
+    const el = document.createElementNS('http://www.w3.org/2000/svg', lineInfo.curve ? 'path' : 'line');
+    if (lineInfo.curve) {
+        const largeArc = Math.abs(lineInfo.curve.deltaAngle) > Math.PI ? 1 : 0;
+        const sweep = lineInfo.curve.deltaAngle > 0 ? 1 : 0;
+        el.setAttribute('d', `M ${lineInfo.x1} ${lineInfo.y1} A ${lineInfo.curve.radius} ${lineInfo.curve.radius} 0 ${largeArc} ${sweep} ${lineInfo.x2} ${lineInfo.y2}`);
+        lineInfo.curveArcLength = lineInfo.curve.arcLength;
+    } else {
+        el.setAttribute('x1', lineInfo.x1); el.setAttribute('y1', lineInfo.y1);
+        el.setAttribute('x2', lineInfo.x2); el.setAttribute('y2', lineInfo.y2);
+    }
     el.setAttribute('stroke', '#38bdf8');
     el.setAttribute('stroke-width', '4');
     el.setAttribute('stroke-dasharray', '6 3');
@@ -338,22 +381,26 @@ function _placeLineElement(lineInfo, code) {
     if (!lineData || !item || !item.svgGroup) return;
 
     const pixelLength = Math.hypot(lineInfo.x2 - lineInfo.x1, lineInfo.y2 - lineInfo.y1);
-    const lineLength = Number(lineData.length) > 0 ? Number(lineData.length) : pixelLength / SCALE;
+    const lineLength = lineInfo.curveArcLength > 0
+        ? lineInfo.curveArcLength / SCALE
+        : (Number(lineData.length) > 0 ? Number(lineData.length) : pixelLength / SCALE);
     if (lineLength <= 0) return;
 
     const elementLength = Math.min(code === 'WI1' ? WINDOW_LENGTH_M : DOOR_LENGTH_M, lineLength);
-    const tDrop = _projectToLine(lineInfo.dropX, lineInfo.dropY,
-        lineInfo.x1, lineInfo.y1, lineInfo.x2, lineInfo.y2);
-    const center = tDrop * lineLength;
+    const center = lineInfo.dropFraction * lineLength;
     const start = Math.max(0, Math.min(lineLength - elementLength, center - elementLength / 2));
     const end = start + elementLength;
 
     if (!Array.isArray(lineData.elements)) lineData.elements = [];
     let insertAt = lineData.elements.length;
-    for (let i = lineData.elements.length - 1; i >= 0; i--) {
-        if (lineData.elements[i].type === 'number') {
-            insertAt = i;
-            break;
+    if (lineData.lineType === 'curve') {
+        insertAt = Math.max(2, lineData.elements.length);
+    } else {
+        for (let i = lineData.elements.length - 1; i >= 0; i--) {
+            if (lineData.elements[i].type === 'number') {
+                insertAt = i;
+                break;
+            }
         }
     }
     lineData.elements.splice(insertAt, 0,
@@ -384,8 +431,98 @@ function _placeLineElement(lineInfo, code) {
  * @param {{ x1,y1,x2,y2, clientX,clientY }} lineInfo
  * @param {number} thicknessM
  */
+function _placeCurvedConstructStrip(lineInfo, thicknessM) {
+    const curve = lineInfo.curve;
+    const thicknessPx = thicknessM * SCALE;
+    const centerDistance = lineInfo.dropFraction * curve.arcLength;
+    const tValues = [0, 1];
+
+    _cActiveSvg.querySelectorAll('polygon[data-construct]').forEach(function(poly) {
+        _parsePolygonPoints(poly).forEach(function(point) {
+            tValues.push(curve.closestDistance(point.x, point.y) / curve.arcLength);
+        });
+    });
+    tValues.sort(function(a, b) { return a - b; });
+
+    let tStart = 0, tEnd = 1;
+    const centerFraction = centerDistance / curve.arcLength;
+    for (let i = 0; i < tValues.length - 1; i++) {
+        if (tValues[i] <= centerFraction && centerFraction <= tValues[i + 1]) {
+            tStart = tValues[i];
+            tEnd = tValues[i + 1];
+            break;
+        }
+    }
+    if (tEnd - tStart < 0.001) return;
+
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', _curvedConstructPoints(curve, tStart, tEnd, thicknessPx));
+    poly.setAttribute('fill', 'rgba(125,211,252,0.35)');
+    poly.setAttribute('stroke', '#38bdf8');
+    poly.setAttribute('stroke-width', '1');
+    poly.setAttribute('vector-effect', 'non-scaling-stroke');
+    poly.setAttribute('data-construct', '1');
+    poly.style.cursor = 'pointer';
+    poly.title = 'Подвійний клік — видалити';
+    poly.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        if (poly.parentNode) poly.parentNode.removeChild(poly);
+    });
+    _cActiveSvg.appendChild(poly);
+
+    const stripCount = G.hierarchyData.filter(function(i) { return i.type === 'construct'; }).length + 1;
+    const hierarchyItem = {
+        id: G.hierarchyIdCounter++,
+        type: 'construct',
+        name: 'Полоска ' + stripCount,
+        constructThickness: thicknessM,
+        constructFromEnd: false,
+        constructLength: 0,
+        visible: true,
+        children: [],
+        expanded: false,
+        parentId: null,
+        _lineX1: lineInfo.x1,
+        _lineY1: lineInfo.y1,
+        _lineX2: lineInfo.x2,
+        _lineY2: lineInfo.y2,
+        _tStart: tStart,
+        _tEnd: tEnd,
+        _curveHeight: _getLineCurveHeight(lineInfo.lineData) * SCALE,
+        _curveShapePoints: lineInfo.curveShapePoints,
+        _svgPoly: poly
+    };
+    G.hierarchyData.push(hierarchyItem);
+    if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
+    if (typeof renderHierarchy === 'function') renderHierarchy();
+    poly.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (typeof selectHierarchyItem === 'function') selectHierarchyItem(hierarchyItem);
+    });
+}
+
+function _curvedConstructPoints(curve, tStart, tEnd, thicknessPx) {
+    const startDistance = tStart * curve.arcLength;
+    const endDistance = tEnd * curve.arcLength;
+    const count = Math.max(3, Math.ceil(Math.abs(curve.deltaAngle) * (tEnd - tStart) * 24));
+    const base = [];
+    const offset = [];
+    for (let i = 0; i <= count; i++) {
+        const point = curve.pointAtDistance(startDistance + (endDistance - startDistance) * i / count);
+        base.push({ x: point.x, y: point.y });
+        offset.push({ x: point.x - point.px * thicknessPx, y: point.y - point.py * thicknessPx });
+    }
+    return base.concat(offset.reverse()).map(function(point) {
+        return point.x + ',' + point.y;
+    }).join(' ');
+}
+
 function _placeConstructStrip(lineInfo, thicknessM) {
     if (!_cActiveSvg) return;
+    if (lineInfo.curve) {
+        _placeCurvedConstructStrip(lineInfo, thicknessM);
+        return;
+    }
 
     const { x1, y1, x2, y2, dropX, dropY } = lineInfo;
     const thicknessPx = thicknessM * SCALE;
@@ -580,6 +717,22 @@ window._redrawConstructItem = function (item) {
 
     const { _lineX1: x1, _lineY1: y1, _lineX2: x2, _lineY2: y2 } = item;
     const thicknessPx = (item.constructThickness || CONSTRUCT_THICKNESS_M) * SCALE;
+
+    if (item._curveHeight != null) {
+        const curve = _getSvgCurveGeometry(x1, y1, x2, y2, item._curveHeight, item._curveShapePoints);
+        if (!curve) return;
+        let tA = item._tStart;
+        let tB = item._tEnd;
+        const lengthM = item.constructLength || 0;
+        if (lengthM > 0) {
+            const span = lengthM * SCALE / curve.arcLength;
+            if (item.constructFromEnd) tA = Math.max(item._tStart, tB - span);
+            else tB = Math.min(item._tEnd, tA + span);
+        }
+        item._svgPoly.setAttribute('points', _curvedConstructPoints(curve, tA, tB, thicknessPx));
+        item._svgPoly.style.display = item.visible === false ? 'none' : '';
+        return;
+    }
 
     const dx  = x2 - x1, dy = y2 - y1;
     const len = Math.sqrt(dx * dx + dy * dy);
