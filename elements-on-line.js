@@ -1,5 +1,5 @@
 /**
- * elements-on-line.js — Малювання архітектурних елементів на лінії (WI1 тощо).
+ * elements-on-line.js — Малювання архітектурних елементів на лінії.
  * Залежності: constants.js, svg-primitives.js
  */
 
@@ -32,20 +32,29 @@ window.drawElementsOnLine = function (parsedData, x1, y1, x2, y2, scale, targetG
             const sy   = y1 + uy * start;
             const elen = end - start;
 
-            if (code === 'WI1') {
-                _drawWI1(svg, sx, sy, ux, uy, px, py, elen, thickness, side);
-            }
+            drawArchitecturalElement(svg, code, sx, sy, ux, uy, px, py, elen, thickness, side, false);
 
             i += 2;
         }
     }
 };
 
-function _drawWI1(target, sx, sy, ux, uy, px, py, elen, thickness, side) {
+window.drawArchitecturalElement = function (target, code, sx, sy, ux, uy, px, py, elen, thickness, side, addHitArea) {
+    if (code !== 'WI1' && code !== 'DV1') return;
+
     const c1x = sx,               c1y = sy;
     const c2x = sx + ux * elen,   c2y = sy + uy * elen;
     const c3x = c2x + px * thickness * side, c3y = c2y + py * thickness * side;
     const c4x = sx  + px * thickness * side, c4y = sy  + py * thickness * side;
+
+    if (addHitArea) {
+        const hitPoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        hitPoly.setAttribute('points', `${c1x},${c1y} ${c2x},${c2y} ${c3x},${c3y} ${c4x},${c4y}`);
+        hitPoly.setAttribute('fill', 'transparent');
+        hitPoly.setAttribute('stroke', 'none');
+        hitPoly.setAttribute('data-hit-area', '1');
+        target.appendChild(hitPoly);
+    }
 
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     rect.setAttribute('points', `${c1x},${c1y} ${c2x},${c2y} ${c3x},${c3y} ${c4x},${c4y}`);
@@ -55,16 +64,25 @@ function _drawWI1(target, sx, sy, ux, uy, px, py, elen, thickness, side) {
     rect.setAttribute('vector-effect', 'non-scaling-stroke');
     target.appendChild(rect);
 
-    const midStartX = sx  + px * (thickness / 2) * side;
-    const midStartY = sy  + py * (thickness / 2) * side;
-    const midEndX   = c2x + px * (thickness / 2) * side;
-    const midEndY   = c2y + py * (thickness / 2) * side;
-
     const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    midLine.setAttribute('x1', midStartX); midLine.setAttribute('y1', midStartY);
-    midLine.setAttribute('x2', midEndX);   midLine.setAttribute('y2', midEndY);
+    if (code === 'WI1') {
+        midLine.setAttribute('x1', sx + px * (thickness / 2) * side);
+        midLine.setAttribute('y1', sy + py * (thickness / 2) * side);
+        midLine.setAttribute('x2', c2x + px * (thickness / 2) * side);
+        midLine.setAttribute('y2', c2y + py * (thickness / 2) * side);
+    } else {
+        const midX = (c1x + c2x + c3x + c4x) / 4;
+        const midY = (c1y + c2y + c3y + c4y) / 4;
+        const halfLength = thickness * 1.5;
+        const crossX = -uy * halfLength;
+        const crossY = ux * halfLength;
+        midLine.setAttribute('x1', midX - crossX);
+        midLine.setAttribute('y1', midY - crossY);
+        midLine.setAttribute('x2', midX + crossX);
+        midLine.setAttribute('y2', midY + crossY);
+    }
     midLine.setAttribute('stroke', 'black');
     midLine.setAttribute('stroke-width', '1');
     midLine.setAttribute('vector-effect', 'non-scaling-stroke');
     target.appendChild(midLine);
-}
+};

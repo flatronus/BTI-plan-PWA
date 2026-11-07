@@ -5,6 +5,8 @@
 
 /** Товщина полоски конструктиву в метрах */
 const CONSTRUCT_THICKNESS_M = 0.2;
+const WINDOW_LENGTH_M = 1.2;
+const DOOR_LENGTH_M = 0.9;
 
 /** Ініціалізує панель Конструктиви */
 window.initConstructsPanel = function () {
@@ -20,6 +22,10 @@ window.initConstructsPanel = function () {
     // Полоска конструктиву 0.20 м
     const strip = _makeConstructStrip('Перекриття 0.20 м', CONSTRUCT_THICKNESS_M);
     body.appendChild(strip);
+
+    // Вікно WI1
+    body.appendChild(_makeWindowStrip());
+    body.appendChild(_makeDoorStrip());
 };
 
 /** Будує drag-джерело полоски */
@@ -62,16 +68,88 @@ function _makeConstructStrip(label, thicknessM) {
     return wrap;
 }
 
+/** Будує drag-джерело вікна */
+function _makeWindowStrip() {
+    return _makeElementStrip('Вікно', 'WI1', 'window');
+}
+
+/** Будує drag-джерело дверей */
+function _makeDoorStrip() {
+    return _makeElementStrip('Двері', 'DV1', 'door');
+}
+
+function _makeElementStrip(labelText, code, dragType) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = [
+        'display:flex;flex-direction:column;align-items:center;gap:4px;',
+        'padding:8px 4px;margin-bottom:6px;',
+        'background:#fdf4ff;border:1px solid #e9d5ff;border-radius:6px;',
+        'cursor:grab;user-select:none;',
+    ].join('');
+    wrap.title = 'Перетягніть на будь-яку лінію фігури';
+
+    const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    preview.setAttribute('width', '80');
+    preview.setAttribute('height', '36');
+    preview.setAttribute('viewBox', '0 0 80 36');
+    preview.style.border = '1px solid #d1d5db';
+
+    const windowShape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    windowShape.setAttribute('x', '1');
+    windowShape.setAttribute('y', '12');
+    windowShape.setAttribute('width', '78');
+    windowShape.setAttribute('height', '12');
+    windowShape.setAttribute('fill', 'none');
+    windowShape.setAttribute('stroke', 'black');
+    preview.appendChild(windowShape);
+
+    const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    if (code === 'WI1') {
+        midLine.setAttribute('x1', '1');
+        midLine.setAttribute('y1', '18');
+        midLine.setAttribute('x2', '79');
+        midLine.setAttribute('y2', '18');
+    } else {
+        midLine.setAttribute('x1', '40');
+        midLine.setAttribute('y1', '0');
+        midLine.setAttribute('x2', '40');
+        midLine.setAttribute('y2', '36');
+    }
+    midLine.setAttribute('stroke', 'black');
+    preview.appendChild(midLine);
+    wrap.appendChild(preview);
+
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size:11px;color:#7e22ce;font-weight:600;';
+    label.textContent = labelText;
+    wrap.appendChild(label);
+
+    wrap.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        _startConstructDrag(e.clientX, e.clientY, CONSTRUCT_THICKNESS_M, dragType);
+    });
+
+    wrap.addEventListener('touchstart', function (e) {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        _startConstructDrag(e.touches[0].clientX, e.touches[0].clientY, CONSTRUCT_THICKNESS_M, dragType);
+    }, { passive: false });
+
+    return wrap;
+}
+
 /* ── Drag-стан ── */
 let _cDragging    = false;
 let _cThicknessM  = CONSTRUCT_THICKNESS_M;
+let _cDragType    = 'construct';
 let _cGhost       = null;   // SVG <rect> або <line> — візуальний привид
 let _cTargetLine  = null;   // { x1,y1,x2,y2, lineData, item } — знайдена лінія
 let _cActiveSvg   = null;
 
-function _startConstructDrag(clientX, clientY, thicknessM) {
+function _startConstructDrag(clientX, clientY, thicknessM, dragType) {
     _cDragging   = true;
     _cThicknessM = thicknessM;
+    _cDragType   = dragType || 'construct';
     _cTargetLine = null;
 
     // Знаходимо активне SVG полотно
@@ -236,8 +314,52 @@ function _finishConstructDrop(clientX, clientY) {
 
     if (!_cTargetLine) return;  // Не потрапили на лінію — скасовуємо
 
-    _placeConstructStrip(_cTargetLine, _cThicknessM);
+    if (_cDragType === 'window' || _cDragType === 'door') {
+        _placeLineElement(_cTargetLine, _cDragType === 'window' ? 'WI1' : 'DV1');
+    } else {
+        _placeConstructStrip(_cTargetLine, _cThicknessM);
+    }
     _cTargetLine = null;
+}
+
+/** Додає елемент до даних лінії та перемальовує фігуру */
+function _placeLineElement(lineInfo, code) {
+    const lineData = lineInfo.lineData;
+    const item = lineInfo.item;
+    if (!lineData || !item || !item.svgGroup) return;
+
+    const pixelLength = Math.hypot(lineInfo.x2 - lineInfo.x1, lineInfo.y2 - lineInfo.y1);
+    const lineLength = Number(lineData.length) > 0 ? Number(lineData.length) : pixelLength / SCALE;
+    if (lineLength <= 0) return;
+
+    const elementLength = Math.min(code === 'WI1' ? WINDOW_LENGTH_M : DOOR_LENGTH_M, lineLength);
+    const tDrop = _projectToLine(lineInfo.dropX, lineInfo.dropY,
+        lineInfo.x1, lineInfo.y1, lineInfo.x2, lineInfo.y2);
+    const center = tDrop * lineLength;
+    const start = Math.max(0, Math.min(lineLength - elementLength, center - elementLength / 2));
+    const end = start + elementLength;
+
+    if (!Array.isArray(lineData.elements)) lineData.elements = [];
+    let insertAt = lineData.elements.length;
+    for (let i = lineData.elements.length - 1; i >= 0; i--) {
+        if (lineData.elements[i].type === 'number') {
+            insertAt = i;
+            break;
+        }
+    }
+    lineData.elements.splice(insertAt, 0,
+        { type: 'number', value: start },
+        { type: 'number', value: end },
+        { type: 'element', value: code }
+    );
+    if (typeof _rebuildLineCode === 'function') {
+        lineData.code = _rebuildLineCode(lineData.elements, lineData.direction, lineData.lineType);
+    }
+
+    if (typeof _redrawItemSvgGroup === 'function') _redrawItemSvgGroup(item);
+    if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
+    if (typeof renderHierarchy === 'function') renderHierarchy();
+    showToast((code === 'WI1' ? 'Вікно' : 'Двері') + ' додано до лінії', 'success');
 }
 
 /**

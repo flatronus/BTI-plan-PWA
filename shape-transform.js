@@ -252,7 +252,12 @@ window.shapeTransform = (function () {
 
         getMode() { return _mode; },
 
+        toggleMoveMode() {
+            api.setMode(_mode === 'move' ? 'pan' : 'move');
+        },
+
         setMode(mode) {
+            if (_mode !== mode) _dragging = false;
             _mode = mode;
             const svg = _getMainSvg();
             if (svg) {
@@ -271,6 +276,8 @@ window.shapeTransform = (function () {
                            : 'btn-mode-pan';
             const activeBtn = document.getElementById(activeId);
             if (activeBtn) activeBtn.classList.add('active-tool');
+            const moveBtn = document.getElementById('btn-mode-move');
+            if (moveBtn) moveBtn.setAttribute('aria-pressed', String(mode === 'move'));
         },
 
         deselect() {

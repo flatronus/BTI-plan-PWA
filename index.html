@@ -60,7 +60,7 @@
                             <span class="toolbar-label ml-1 text-sm">Вибір</span>
                         </button>
 
-                        <button id="btn-mode-move" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="shapeTransform.setMode('move')" title="Переміщення фігури (M)">
+                        <button id="btn-mode-move" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" aria-pressed="false" onclick="shapeTransform.toggleMoveMode()" title="Переміщення фігури (M)">
                             <i class="fas fa-arrows-alt text-gray-700"></i>
                             <span class="toolbar-label ml-1 text-sm">Рухати</span>
                         </button>
@@ -276,7 +276,12 @@
                             </div>
                             <button onclick="selectElement('WI1')" style="padding: 4px 10px; background: #9C27B0; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">WI1</button>
 
-                            <span style="padding: 4px 0;">Двері 1</span>
+                            <div style="padding: 4px 0; display: flex; align-items: center;">
+                                <svg width="60" height="24" viewBox="0 0 60 24" style="border: 1px solid #999;">
+                                    <rect x="1" y="8" width="58" height="8" fill="none" stroke="black" stroke-width="1"/>
+                                    <line x1="30" y1="0" x2="30" y2="24" stroke="black" stroke-width="1"/>
+                                </svg>
+                            </div>
                             <button onclick="selectElement('DV1')" style="padding: 4px 10px; background: #9C27B0; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">DV1</button>
 
                             <span style="padding: 4px 0;">Отвір 1</span>
