@@ -114,7 +114,20 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
             const elKey = `wi_${lineData.from}_${lineData.to ?? 'c'}_${code}_${elements[i].value}`;
             let elItem = null;
             if (parentHierarchyItem) {
-                elItem = (parentHierarchyItem.children || []).find(c => c._elKey === elKey && c.type === 'element');
+                const children = parentHierarchyItem.children || [];
+                elItem = children.find(c => c._elKey === elKey && c.type === 'element');
+                if (!elItem) {
+                    const previousLine = (parentHierarchyItem.figureLines || []).find(l => l.id === lineData.id);
+                    if (previousLine) {
+                        elItem = children.find(c =>
+                            c.type === 'element' &&
+                            c.lineFrom === previousLine.from &&
+                            c.lineTo === previousLine.to &&
+                            c.elCode === code &&
+                            c.elStart === elements[i].value
+                        );
+                    }
+                }
             }
 
             // SVG-група для елемента
@@ -124,6 +137,10 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
                 // Оновлюємо існуючий: перереєструємо групу
                 elGroup.setAttribute('data-hierarchy-id', elItem.id);
                 elItem.svgGroup = elGroup;
+                elItem._hostLineId = lineData.id;
+                elItem._elKey = elKey;
+                elItem.lineFrom = lineData.from;
+                elItem.lineTo = lineData.to;
             } else {
                 // Новий елемент ієрархії
                 const newId = G.hierarchyIdCounter++;
@@ -134,6 +151,7 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
                         type:     'element',
                         name:     ((typeof ELEMENT_NAMES !== 'undefined' ? ELEMENT_NAMES[code] : null) || code) + ' ' + lineData.from + '-' + (lineData.to ?? 'c'),
                         _elKey:   elKey,
+                        _hostLineId: lineData.id,
                         elCode:   code,
                         elStart:  elements[i].value,
                         elEnd:    elements[i+1].value,

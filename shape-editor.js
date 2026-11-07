@@ -287,7 +287,7 @@ window._makeLineData = function (id, from, to, parsedData, length, isClosing, is
 /* ── Видалення лінії та всіх наступних ── */
 /**
  * Видаляє лінію з даним id і всі лінії, що були створені після неї
- * (тобто всі лінії з більшим id, включно з діагоналями що посилаються на видалені точки).
+ * (включно з діагоналями, що посилаються на точки видалених ліній).
  */
 window.deleteLineAndFollowing = function (lineId) {
     const idx = G.figureLines.findIndex(function(l) { return l.id === lineId; });
@@ -295,36 +295,12 @@ window.deleteLineAndFollowing = function (lineId) {
 
     const deletedLine = G.figureLines[idx];
 
-    // Визначаємо першу точку що зникне — «to» видаленої лінії
-    // (для замикаючої — точка 1 не видаляється, просто прибираємо замикання)
-    const firstDeletedPointNum = (!deletedLine.isDiagonal && !deletedLine.isClosing)
-        ? deletedLine.to
-        : null;
-
-    // Збираємо id ліній що треба видалити:
-    // 1) Сама лінія
-    // 2) Всі не-діагональні лінії у яких from >= firstDeletedPointNum
-    //    (тобто починаються з видаленої або пізнішої точки)
-    // 3) Діагоналі у яких хоча б одна точка (from або to) >= firstDeletedPointNum
-    const toDelete = new Set();
-    toDelete.add(lineId);
-
-    if (firstDeletedPointNum !== null) {
-        G.figureLines.forEach(function(l) {
-            if (l.id === lineId) return;
-            if (!l.isDiagonal) {
-                // Звичайна лінія: видаляємо якщо її початок >= firstDeletedPointNum
-                if (l.from >= firstDeletedPointNum || l.to >= firstDeletedPointNum) {
-                    toDelete.add(l.id);
-                }
-            } else {
-                // Діагональ: видаляємо тільки якщо хоча б одна точка зникає
-                if (l.from >= firstDeletedPointNum || l.to >= firstDeletedPointNum) {
-                    toDelete.add(l.id);
-                }
-            }
-        });
-    }
+    // Звичайна лінія видаляє також усі наступні лінії; діагональ і замикання — лише себе.
+    const toDelete = new Set(
+        deletedLine.isDiagonal || deletedLine.isClosing
+            ? [lineId]
+            : G.figureLines.slice(idx).map(function(line) { return line.id; })
+    );
 
     G.figureLines = G.figureLines.filter(function(l) { return !toDelete.has(l.id); });
 
@@ -370,6 +346,7 @@ window.editLine = function (line) {
 window.updateExistingLine = function (lineId, parsedData) {
     const idx = G.figureLines.findIndex(function(l) { return l.id === lineId; });
     if (idx === -1) { showToast('Лінію не знайдено', 'error'); return; }
+    if (_trySplitFreeLine(idx)) return;
 
     let newLength = 0;
     for (let i = parsedData.elements.length - 1; i >= 0; i--) {
@@ -422,6 +399,158 @@ window.updateExistingLine = function (lineId, parsedData) {
 
     redrawEntireFigure();
 };
+
+function _trySplitFreeLine(lineIndex) {
+    const text = document.getElementById('coordInput').value.replace(/\r/g, '');
+    const rows = text.split('\n');
+    while (rows.length && rows[rows.length - 1].trim() === '') rows.pop();
+    if (rows.length < 3 || rows[0].trim().toLowerCase() !== 'free' ||
+        rows[1].trim().toLowerCase() !== 'line') return false;
+
+    const entries = rows.slice(2).map(function(value) { return value.trim(); });
+    const blankCount = entries.filter(function(value) { return value === ''; }).length;
+    const isLength = function(value) { return /^-?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(value); };
+    if (blankCount === 0 && (entries.length < 2 || entries.some(function(value) { return !isLength(value); }))) {
+        return false;
+    }
+
+    const lineData = G.figureLines[lineIndex];
+    if (lineData.direction !== 'free') {
+        showToast('Розділяти можна лише лінію з напрямком free', 'warning');
+        return true;
+    }
+    if (lineData.lineType !== 'line') {
+        showToast('Спочатку змініть дугу на лінію, потім поділіть її', 'warning');
+        return true;
+    }
+    if (blankCount > 1) {
+        showToast('Для залишку можна використати лише один порожній рядок', 'warning');
+        return true;
+    }
+    if (blankCount === 1 && (entries[0] === '' || entries[entries.length - 1] === '')) {
+        showToast('Порожній рядок для залишку має бути між довжинами відрізків', 'warning');
+        return true;
+    }
+    if (lineData.isClosing || lineData.isPending ||
+        G.pendingFreeLines.some(function(line) { return line.id === lineData.id; })) {
+        showToast('Спочатку зафіксуйте напрямок лінії, замкнувши фігуру', 'warning');
+        return true;
+    }
+
+    const specifiedLengths = entries.filter(function(value) { return value !== ''; })
+        .map(function(value) { return Number(value.replace(',', '.')); });
+    if (specifiedLengths.length === 0 || specifiedLengths.some(function(value) {
+        return !Number.isFinite(value) || value <= 0;
+    })) {
+        showToast('Довжини відрізків мають бути додатними числами', 'warning');
+        return true;
+    }
+
+    const totalLength = Number(lineData.length);
+    const specifiedTotal = specifiedLengths.reduce(function(sum, value) { return sum + value; }, 0);
+    if (!Number.isFinite(totalLength) || totalLength <= 0 || specifiedTotal > totalLength + 0.001) {
+        showToast('Сума довжин перевищує довжину старої лінії', 'warning');
+        return true;
+    }
+
+    const remainder = Number((totalLength - specifiedTotal).toFixed(3));
+    const segmentLengths = entries.includes('')
+        ? entries.map(function(value) {
+            return value === '' ? remainder : Number(value.replace(',', '.'));
+        })
+        : specifiedLengths.slice();
+    if (!entries.includes('') && remainder > 0.001) segmentLengths.push(remainder);
+    if (entries.includes('') && remainder <= 0) {
+        showToast('Для порожнього рядка має залишатися додатна довжина', 'warning');
+        return true;
+    }
+    if (segmentLengths.length < 2 || segmentLengths.some(function(value) { return value <= 0; })) {
+        showToast('Потрібно вказати щонайменше два відрізки', 'warning');
+        return true;
+    }
+
+    const fromPoint = G.shapePoints.find(function(point) { return point.num === lineData.from; });
+    const toPoint = G.shapePoints.find(function(point) { return point.num === lineData.to; });
+    if (!fromPoint || !toPoint || fromPoint.isTemp || toPoint.isTemp) {
+        showToast('Не вдалося визначити напрямок старої лінії', 'warning');
+        return true;
+    }
+    const dx = toPoint.x - fromPoint.x;
+    const dy = toPoint.y - fromPoint.y;
+    const geometricLength = Math.hypot(dx, dy) / SCALE;
+    if (geometricLength <= 0 || Math.abs(geometricLength - totalLength) > 0.02) {
+        showToast('Напрямок або довжина старої лінії ще не зафіксовані', 'warning');
+        return true;
+    }
+
+    const hasLineElements = (lineData.elements || []).some(function(element, index, elements) {
+        return element.type === 'number' && elements[index + 1]?.type === 'number' &&
+            elements[index + 2]?.type === 'element';
+    });
+    if (hasLineElements) {
+        showToast('Спочатку видаліть елементи, прикріплені до старої лінії', 'warning');
+        return true;
+    }
+
+    const parentItem = appState.editingHierarchyItemId != null
+        ? findHierarchyItemById(appState.editingHierarchyItemId)
+        : null;
+    function hasAnchoredChild(item) {
+        return (item.children || []).some(function(child) {
+            return child._anchorDef?.hostLineId === lineData.id || hasAnchoredChild(child);
+        });
+    }
+    if (parentItem && hasAnchoredChild(parentItem)) {
+        showToast('До старої лінії прив’язані інші фігури — спочатку відв’яжіть їх', 'warning');
+        return true;
+    }
+
+    const oldEndPointNum = lineData.to;
+    const extraPoints = segmentLengths.length - 1;
+    const ux = dx / (geometricLength * SCALE);
+    const uy = dy / (geometricLength * SCALE);
+    let distance = 0;
+    const newSegments = segmentLengths.map(function(length, index) {
+        distance += length * SCALE;
+        const endX = index === segmentLengths.length - 1
+            ? toPoint.x : fromPoint.x + ux * distance;
+        const endY = index === segmentLengths.length - 1
+            ? toPoint.y : fromPoint.y + uy * distance;
+        const normalizedLength = Number(length.toFixed(3));
+        const elements = [{ type: 'number', value: normalizedLength }];
+        const segment = {
+            ...lineData,
+            id: index === 0 ? lineData.id : G.lineIdCounter++,
+            from: null,
+            to: null,
+            direction: 'free',
+            lineType: 'line',
+            elements,
+            code: `free\nline\n${normalizedLength.toFixed(3)}`,
+            length: normalizedLength,
+            isClosing: false,
+            isPending: false,
+            _cachedEnd: { x: endX, y: endY }
+        };
+        return segment;
+    });
+
+    G.figureLines.splice(lineIndex, 1, ...newSegments);
+    G.figureLines.forEach(function(line) {
+        if (!line.isDiagonal) return;
+        if (line.from >= oldEndPointNum) line.from += extraPoints;
+        if (line.to >= oldEndPointNum) line.to += extraPoints;
+    });
+    (G.diagonals || []).forEach(function(diagonal) {
+        if (diagonal.pt1 >= oldEndPointNum) diagonal.pt1 += extraPoints;
+        if (diagonal.pt2 >= oldEndPointNum) diagonal.pt2 += extraPoints;
+    });
+
+    _rebuildChainPoints();
+    redrawEntireFigure();
+    showToast('Лінію поділено на відрізки', 'success');
+    return true;
+}
 
 
 /* ── Перемалювання всієї фігури ── */
@@ -611,6 +740,7 @@ window.calculateFreeAngleFigure = function () {
             G.shapePoints[tempIdx].isTemp = false;
         }
 
+        pendingLine._cachedEnd = { x: endX, y: endY };
         pendingLine.isPending = false;
         pendingLine.to        = G.shapePoints[tempIdx]?.num || 2;
         return { endX, endY, tempIdx };
