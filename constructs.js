@@ -26,6 +26,7 @@ window.initConstructsPanel = function () {
     // Вікно WI1
     body.appendChild(_makeWindowStrip());
     body.appendChild(_makeDoorStrip());
+    body.appendChild(_makeOpeningStrip());
 };
 
 /** Будує drag-джерело полоски */
@@ -78,6 +79,10 @@ function _makeDoorStrip() {
     return _makeElementStrip('Двері', 'DV1', 'door');
 }
 
+function _makeOpeningStrip() {
+    return _makeElementStrip('Отвір', 'OT1', 'opening');
+}
+
 function _makeElementStrip(labelText, code, dragType) {
     const wrap = document.createElement('div');
     wrap.style.cssText = [
@@ -103,20 +108,23 @@ function _makeElementStrip(labelText, code, dragType) {
     windowShape.setAttribute('stroke', 'black');
     preview.appendChild(windowShape);
 
-    const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     if (code === 'WI1') {
+        const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         midLine.setAttribute('x1', '1');
         midLine.setAttribute('y1', '18');
         midLine.setAttribute('x2', '79');
         midLine.setAttribute('y2', '18');
-    } else {
+        midLine.setAttribute('stroke', 'black');
+        preview.appendChild(midLine);
+    } else if (code === 'DV1') {
+        const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         midLine.setAttribute('x1', '40');
         midLine.setAttribute('y1', '0');
         midLine.setAttribute('x2', '40');
         midLine.setAttribute('y2', '36');
+        midLine.setAttribute('stroke', 'black');
+        preview.appendChild(midLine);
     }
-    midLine.setAttribute('stroke', 'black');
-    preview.appendChild(midLine);
     wrap.appendChild(preview);
 
     const label = document.createElement('span');
@@ -314,8 +322,9 @@ function _finishConstructDrop(clientX, clientY) {
 
     if (!_cTargetLine) return;  // Не потрапили на лінію — скасовуємо
 
-    if (_cDragType === 'window' || _cDragType === 'door') {
-        _placeLineElement(_cTargetLine, _cDragType === 'window' ? 'WI1' : 'DV1');
+    if (_cDragType === 'window' || _cDragType === 'door' || _cDragType === 'opening') {
+        const code = _cDragType === 'window' ? 'WI1' : _cDragType === 'door' ? 'DV1' : 'OT1';
+        _placeLineElement(_cTargetLine, code);
     } else {
         _placeConstructStrip(_cTargetLine, _cThicknessM);
     }
@@ -356,10 +365,14 @@ function _placeLineElement(lineInfo, code) {
         lineData.code = _rebuildLineCode(lineData.elements, lineData.direction, lineData.lineType);
     }
 
+    if (code === 'OT1' && typeof calculateFigureArea === 'function') {
+        item.area = calculateFigureArea(item.figureLines, item.shapePoints).toFixed(1);
+    }
     if (typeof _redrawItemSvgGroup === 'function') _redrawItemSvgGroup(item);
     if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
     if (typeof renderHierarchy === 'function') renderHierarchy();
-    showToast((code === 'WI1' ? 'Вікно' : 'Двері') + ' додано до лінії', 'success');
+    const label = code === 'WI1' ? 'Вікно' : code === 'DV1' ? 'Двері' : 'Отвір';
+    showToast(label + ' додано до лінії', 'success');
 }
 
 /**

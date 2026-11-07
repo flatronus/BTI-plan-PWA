@@ -152,7 +152,7 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
 
             parentGroup.appendChild(elGroup);
 
-            if (code === 'WI1' || code === 'DV1') {
+            if (code === 'WI1' || code === 'DV1' || code === 'OT1') {
                 // Товщина: індивідуальна для елемента > загальна для лінії > константа
                 const elThickness = (elItem && elItem.elThickness != null)
                     ? elItem.elThickness

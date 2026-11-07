@@ -35,15 +35,38 @@ window.resetShapeData = function () {
 /* ── Площа (формула Гаусса) ── */
 window.calculateAndDisplayArea = function () {
     if (G.shapePoints.length < 3) return;
-    let area = 0;
-    for (let i = 0; i < G.shapePoints.length; i++) {
-        const j = (i + 1) % G.shapePoints.length;
-        area += G.shapePoints[i].x * G.shapePoints[j].y;
-        area -= G.shapePoints[j].x * G.shapePoints[i].y;
-    }
-    area = Math.abs(area) / 2;
-    appState.calculatedArea = (area / (SCALE * SCALE)).toFixed(1);
+    appState.calculatedArea = calculateFigureArea(G.figureLines, G.shapePoints).toFixed(1);
     updateLinesList();
+};
+
+window.calculateFigureArea = function (figureLines, shapePoints) {
+    let area = 0;
+    for (let i = 0; i < shapePoints.length; i++) {
+        const j = (i + 1) % shapePoints.length;
+        area += shapePoints[i].x * shapePoints[j].y;
+        area -= shapePoints[j].x * shapePoints[i].y;
+    }
+    area = Math.abs(area) / 2 / (SCALE * SCALE);
+
+    for (const line of figureLines) {
+        if (line.isDiagonal || !Array.isArray(line.elements)) continue;
+        for (let i = 0; i < line.elements.length - 2; i++) {
+            const start = line.elements[i];
+            const end = line.elements[i + 1];
+            const element = line.elements[i + 2];
+            if (start.type !== 'number' || end.type !== 'number' ||
+                element.type !== 'element' || typeof element.value !== 'string') continue;
+
+            const code = element.value.replace(/^-/, '');
+            if (code === 'OT1') {
+                const length = Math.abs(Number(end.value) - Number(start.value));
+                if (Number.isFinite(length)) area += length * ELEMENT_THICKNESS;
+            }
+            i += 2;
+        }
+    }
+
+    return area;
 };
 
 /* ── Автомасштабування shapeCanvas ── */
@@ -230,7 +253,6 @@ window.drawLineOnCanvas = function (parsedData) {
     if (isClosing) {
         targetPointNum = 1;
         appState.isClosingLine = false;
-        calculateAndDisplayArea();
     } else {
         G.pointCounter++;
         G.shapePoints.push({ x: endX, y: endY, num: G.pointCounter });
@@ -241,6 +263,7 @@ window.drawLineOnCanvas = function (parsedData) {
     const lineData = _makeLineData(G.lineIdCounter, lastPoint.num, targetPointNum, parsedData, lineLength, isClosing, false);
     G.figureLines.push(lineData);
     updateLinesList();
+    if (isClosing) calculateAndDisplayArea();
     G.lineIdCounter++;
     autoScaleAndCenterFigure();
 };

@@ -40,7 +40,7 @@ window.drawElementsOnLine = function (parsedData, x1, y1, x2, y2, scale, targetG
 };
 
 window.drawArchitecturalElement = function (target, code, sx, sy, ux, uy, px, py, elen, thickness, side, addHitArea) {
-    if (code !== 'WI1' && code !== 'DV1') return;
+    if (code !== 'WI1' && code !== 'DV1' && code !== 'OT1') return;
 
     const c1x = sx,               c1y = sy;
     const c2x = sx + ux * elen,   c2y = sy + uy * elen;
@@ -64,25 +64,27 @@ window.drawArchitecturalElement = function (target, code, sx, sy, ux, uy, px, py
     rect.setAttribute('vector-effect', 'non-scaling-stroke');
     target.appendChild(rect);
 
-    const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    if (code === 'WI1') {
-        midLine.setAttribute('x1', sx + px * (thickness / 2) * side);
-        midLine.setAttribute('y1', sy + py * (thickness / 2) * side);
-        midLine.setAttribute('x2', c2x + px * (thickness / 2) * side);
-        midLine.setAttribute('y2', c2y + py * (thickness / 2) * side);
-    } else {
-        const midX = (c1x + c2x + c3x + c4x) / 4;
-        const midY = (c1y + c2y + c3y + c4y) / 4;
-        const halfLength = thickness * 1.5;
-        const crossX = -uy * halfLength;
-        const crossY = ux * halfLength;
-        midLine.setAttribute('x1', midX - crossX);
-        midLine.setAttribute('y1', midY - crossY);
-        midLine.setAttribute('x2', midX + crossX);
-        midLine.setAttribute('y2', midY + crossY);
+    if (code === 'WI1' || code === 'DV1') {
+        const midLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        if (code === 'WI1') {
+            midLine.setAttribute('x1', sx + px * (thickness / 2) * side);
+            midLine.setAttribute('y1', sy + py * (thickness / 2) * side);
+            midLine.setAttribute('x2', c2x + px * (thickness / 2) * side);
+            midLine.setAttribute('y2', c2y + py * (thickness / 2) * side);
+        } else {
+            const midX = (c1x + c2x + c3x + c4x) / 4;
+            const midY = (c1y + c2y + c3y + c4y) / 4;
+            const halfLength = thickness * 1.5;
+            const crossX = -uy * halfLength;
+            const crossY = ux * halfLength;
+            midLine.setAttribute('x1', midX - crossX);
+            midLine.setAttribute('y1', midY - crossY);
+            midLine.setAttribute('x2', midX + crossX);
+            midLine.setAttribute('y2', midY + crossY);
+        }
+        midLine.setAttribute('stroke', 'black');
+        midLine.setAttribute('stroke-width', '1');
+        midLine.setAttribute('vector-effect', 'non-scaling-stroke');
+        target.appendChild(midLine);
     }
-    midLine.setAttribute('stroke', 'black');
-    midLine.setAttribute('stroke-width', '1');
-    midLine.setAttribute('vector-effect', 'non-scaling-stroke');
-    target.appendChild(midLine);
 };

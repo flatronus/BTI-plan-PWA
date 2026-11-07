@@ -460,6 +460,9 @@ function _syncElementToParentAndRedraw(elItem) {
             i += 2;
         }
     }
+    if (elItem.elCode === 'OT1' && typeof calculateFigureArea === 'function') {
+        parent.area = calculateFigureArea(parent.figureLines, parent.shapePoints).toFixed(1);
+    }
     // Перемальовуємо SVG-групу батька
     var offsetX = parent._anchorOnCanvas ? parent._anchorOnCanvas.x - START_X : (parent._offsetX || 0);
     var offsetY = parent._anchorOnCanvas ? parent._anchorOnCanvas.y - START_Y : (parent._offsetY || 0);
