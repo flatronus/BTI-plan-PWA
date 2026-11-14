@@ -160,55 +160,80 @@ window._chimneyInteriorSide = function (shapePoints, figureLines, hostLine, x1, 
 window.drawCurvedArchitecturalElement = function (target, code, curve, start, end, thickness, side, addHitArea, options) {
     if (code !== 'WI1' && code !== 'DV1' && code !== 'OT1' && code !== 'KO1') return;
     options = options || {};
+    const offset = Number(options.offset) || 0;
     start = Math.max(0, Math.min(curve.arcLength, start));
     end = Math.max(start, Math.min(curve.arcLength, end));
     if (end <= start) return;
+    if (code === 'KO1' && offset === 0) {
+        const offsetRadius = curve.radius;
+        if (offsetRadius !== 0 && end - start <= 2 * Math.abs(offsetRadius)) {
+            const angleSpan = 2 * Math.asin((end - start) / (2 * Math.abs(offsetRadius)));
+            const adjustedSpan = Math.min(curve.arcLength, angleSpan * curve.radius);
+            const center = (start + end) / 2;
+            start = Math.max(0, Math.min(curve.arcLength - adjustedSpan, center - adjustedSpan / 2));
+            end = start + adjustedSpan;
+        }
+    }
     const count = Math.max(3, Math.ceil(Math.abs(curve.deltaAngle) * Math.max(0, end - start) /
         curve.arcLength * 24));
     const base = [];
     const outer = [];
-    const startPoint = curve.pointAtDistance(start);
-    const endPoint = curve.pointAtDistance(end);
-    const chordLength = Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y);
-    let outerNormal = null;
-    if (code === 'KO1' && chordLength > 0) {
-        const chordUx = (endPoint.x - startPoint.x) / chordLength;
-        const chordUy = (endPoint.y - startPoint.y) / chordLength;
-        let normalX = chordUy;
-        let normalY = -chordUx;
-        const middlePoint = curve.pointAtDistance((start + end) / 2);
-        if ((normalX * middlePoint.px + normalY * middlePoint.py) * side < 0) {
-            normalX = -normalX;
-            normalY = -normalY;
+    if (code === 'KO1' && offset !== 0) {
+        const startPoint = curve.pointAtDistance(start);
+        const endPoint = curve.pointAtDistance(end);
+        const startX = startPoint.x + startPoint.px * offset * side;
+        const startY = startPoint.y + startPoint.py * offset * side;
+        const endX = endPoint.x + endPoint.px * offset * side;
+        const endY = endPoint.y + endPoint.py * offset * side;
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const length = Math.hypot(dx, dy);
+        const middle = curve.pointAtDistance((start + end) / 2);
+        const ux = length > 0 ? dx / length : middle.ux;
+        const uy = length > 0 ? dy / length : middle.uy;
+        const centerX = (startX + endX) / 2;
+        const centerY = (startY + endY) / 2;
+        const halfLength = (end - start) / 2;
+        const normalX = uy;
+        const normalY = -ux;
+        base.push(
+            { x: centerX - ux * halfLength, y: centerY - uy * halfLength },
+            { x: centerX + ux * halfLength, y: centerY + uy * halfLength }
+        );
+        outer.push(
+            { x: base[0].x + normalX * thickness * side, y: base[0].y + normalY * thickness * side },
+            { x: base[1].x + normalX * thickness * side, y: base[1].y + normalY * thickness * side }
+        );
+    } else {
+        for (let i = 0; i <= count; i++) {
+            const distance = start + (end - start) * i / count;
+            const point = curve.pointAtDistance(distance);
+            base.push({
+                x: point.x + point.px * offset * side,
+                y: point.y + point.py * offset * side
+            });
+            if (code !== 'KO1') {
+                outer.push({
+                    x: point.x + point.px * (offset + thickness) * side,
+                    y: point.y + point.py * (offset + thickness) * side
+                });
+            }
         }
-        outerNormal = { x: normalX * thickness, y: normalY * thickness };
-    }
-    for (let i = 0; i <= count; i++) {
-        const distance = start + (end - start) * i / count;
-        const point = curve.pointAtDistance(distance);
-        base.push({
-            x: point.x + point.px * (options.offset || 0) * side,
-            y: point.y + point.py * (options.offset || 0) * side
-        });
-        if (code !== 'KO1') {
+        if (code === 'KO1') {
+            const chordX = base[base.length - 1].x - base[0].x;
+            const chordY = base[base.length - 1].y - base[0].y;
+            const chordLength = Math.hypot(chordX, chordY);
+            const normalX = chordLength > 0 ? chordY / chordLength : 0;
+            const normalY = chordLength > 0 ? -chordX / chordLength : 0;
             outer.push({
-                x: point.x + point.px * ((options.offset || 0) + thickness) * side,
-                y: point.y + point.py * ((options.offset || 0) + thickness) * side
+                x: base[0].x + normalX * thickness * side,
+                y: base[0].y + normalY * thickness * side
+            });
+            outer.push({
+                x: base[base.length - 1].x + normalX * thickness * side,
+                y: base[base.length - 1].y + normalY * thickness * side
             });
         }
-    }
-    if (outerNormal) {
-        outer.push({
-            x: base[0].x + outerNormal.x,
-            y: base[0].y + outerNormal.y
-        });
-        const baseEnd = base[base.length - 1];
-        outer.push({
-            x: baseEnd.x + outerNormal.x,
-            y: baseEnd.y + outerNormal.y
-        });
-    } else if (code === 'KO1') {
-        outer.push(base[0], base[base.length - 1]);
     }
 
     const polygonPoints = base.concat(outer.slice().reverse());
@@ -230,7 +255,7 @@ window.drawCurvedArchitecturalElement = function (target, code, curve, start, en
     rect.setAttribute('vector-effect', 'non-scaling-stroke');
     target.appendChild(rect);
 
-    if (code === 'KO1' && (options.offset || 0) === 0) {
+    if (code === 'KO1' && offset === 0) {
         const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         basePath.setAttribute('d', base.map(function(point, index) {
             return (index === 0 ? 'M ' : 'L ') + point.x + ' ' + point.y;
