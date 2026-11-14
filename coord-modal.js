@@ -52,14 +52,14 @@ window.closeDiagonalModal = function () {
 
 window.applyDiagonal = function () {
     const raw   = document.getElementById('diagonalInput').value.trim();
-    const parts = raw.split(/[\s,;]+/);
+    const parts = raw.split(/[\s;]+/);
     if (parts.length < 3) {
         showToast('Формат: <точка1> <точка2> <відстань>  наприклад: 1 3 4,52', 'warning');
         return;
     }
     const pt1Num = parseInt(parts[0]);
     const pt2Num = parseInt(parts[1]);
-    const dist   = parseFloat(parts[2].replace(',', '.'));
+    const dist   = window.normalizeMeasurement(parts[2]);
 
     if (isNaN(pt1Num) || isNaN(pt2Num) || isNaN(dist) || dist <= 0) {
         showToast('Невірний формат. Приклад: 1 3 4,52', 'error');
@@ -207,7 +207,7 @@ window.parseCoordinateInput = function (inputText) {
     });
     if (chimneyIndex !== -1) {
         const parseNumber = function(value) {
-            const number = parseFloat(value.replace(',', '.'));
+            const number = window.normalizeMeasurement(value);
             return Number.isFinite(number) ? number : null;
         };
         const numbersBefore = lines.slice(startIndex + 1, chimneyIndex).map(parseNumber);
@@ -265,7 +265,7 @@ window.parseCoordinateInput = function (inputText) {
     }
 
     for (let i = startIndex + 1; i < lines.length; i++) {
-        const numValue = parseFloat(lines[i].replace(',', '.'));
+        const numValue = window.normalizeMeasurement(lines[i]);
         if (!isNaN(numValue)) {
             elements.push({ type: 'number', value: numValue });
         } else {

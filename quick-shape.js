@@ -34,8 +34,8 @@ window.createQuickShape = function () {
     if (!rawInput) { showToast('Введіть розміри фігури', 'warning'); return; }
 
     const dims = rawInput.split(/\s+/).map(d => {
-        const n = parseFloat(d.replace(',', '.'));
-        return isNaN(n) ? null : n;
+        const n = window.normalizeMeasurement(d);
+        return Number.isFinite(n) ? n : null;
     }).filter(d => d !== null);
 
     if (shapeType === 'rectangle') {

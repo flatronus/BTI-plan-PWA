@@ -504,17 +504,23 @@ function _placeBoundFigure(lineInfo) {
         return;
     }
 
-    const width = Math.min(CONSTRUCT_FIGURE_SIZE_M, lineLength);
+    const width = Math.min(CONSTRUCT_FIGURE_SIZE_M, Math.floor(lineLength * 100) / 100);
+    if (width <= 0) {
+        showToast('Лінія закоротка для прив’язаної фігури', 'warning');
+        return;
+    }
     const dropFraction = Number.isFinite(lineInfo.dropFraction)
         ? Math.max(0, Math.min(1, lineInfo.dropFraction))
         : 0.5;
     const center = dropFraction * lineLength;
-    const start = Math.max(0, Math.min(lineLength - width, center - width / 2));
+    const maxStart = Math.floor((lineLength - width) * 100) / 100;
+    const start = Math.max(0, Math.min(maxStart, window.normalizeMeasurement(center - width / 2)));
     const binding = {
         hostLineId: hostLine.id,
         start,
-        end: start + width,
+        end: window.normalizeMeasurement(start + width),
         offset: 0,
+        reverseReference: false,
         side: _getBoundFigureSide(lineInfo)
     };
     const height = CONSTRUCT_FIGURE_SIZE_M;
@@ -546,6 +552,7 @@ function _placeBoundFigure(lineInfo) {
     item._offsetY = 0;
     group.setAttribute('data-hierarchy-id', item.id);
     _redrawItemSvgGroup(item);
+    if (typeof _refreshFigureAreaAncestors === 'function') _refreshFigureAreaAncestors(item);
     _syncHierarchyToCanvas();
     selectHierarchyItem(item);
     showToast('Фігуру прив’язано до лінії', 'success');

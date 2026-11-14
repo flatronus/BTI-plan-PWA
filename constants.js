@@ -15,3 +15,43 @@ const FONT_MM_TO_PX        = 5;     // 1 мм паперового шрифту 
 const DEFAULT_FONT_SIZE_MM = 3.5;   // Стандарт ЕСКД для масштабу 1:100 (мм)
 
 const DEBUG = false;        // Вмикає налагоджувальні повідомлення в консолі
+
+window.normalizeMeasurement = function (value, precision) {
+    precision = precision == null ? 2 : precision;
+    const text = String(value).trim().replace(',', '.');
+    if (!text) return NaN;
+    const number = Number(text);
+    if (!Number.isFinite(number)) return NaN;
+    const magnitude = Math.abs(number);
+    const factor = Math.pow(10, precision);
+    const rounded = Math.sign(number) *
+        Math.round((magnitude + Number.EPSILON * Math.max(1, magnitude)) * factor) / factor;
+    return rounded;
+};
+
+window.formatMeasurement = function (value, precision) {
+    precision = precision == null ? 2 : precision;
+    const number = window.normalizeMeasurement(value, precision);
+    return Number.isFinite(number) ? number.toFixed(precision) : '';
+};
+
+window.limitMeasurementInput = function (value, precision) {
+    precision = precision == null ? 2 : precision;
+    const text = String(value).replace(/,/g, '.');
+    const negative = text.trim().startsWith('-');
+    const digits = text.replace(/[^0-9.]/g, '');
+    const decimalIndex = digits.indexOf('.');
+    const whole = decimalIndex === -1 ? digits : digits.slice(0, decimalIndex);
+    const rawFraction = decimalIndex === -1
+        ? ''
+        : digits.slice(decimalIndex + 1).replace(/\./g, '');
+    if (rawFraction.length > precision) {
+        const candidate = (negative ? '-' : '') + (whole || '0') + '.' + rawFraction;
+        const number = window.normalizeMeasurement(candidate, precision);
+        return Number.isFinite(number) ? number.toFixed(precision) : '';
+    }
+    const fraction = decimalIndex === -1
+        ? ''
+        : rawFraction.slice(0, precision);
+    return (negative ? '-' : '') + whole + (decimalIndex === -1 ? '' : '.' + fraction);
+};

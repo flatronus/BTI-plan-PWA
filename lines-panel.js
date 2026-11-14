@@ -54,7 +54,7 @@ window.updateLinesList = function () {
         areaInput.type      = 'number';
         areaInput.inputMode = 'decimal';
         areaInput.step      = '0.1';
-        areaInput.value     = appState.customArea || appState.calculatedArea;
+        areaInput.value     = window.formatMeasurement(appState.customArea || appState.calculatedArea, 1);
         areaInput.style.cssText = 'width: 100%; padding: 4px; font-size: 12px; text-align: center; border: 1px solid #ddd; border-radius: 4px;';
         areaInput.onchange  = function () { appState.customArea = parseFloat(this.value).toFixed(1); };
         areaInputWrap.appendChild(areaInput);

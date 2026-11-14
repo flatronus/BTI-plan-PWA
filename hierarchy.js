@@ -13,6 +13,13 @@ const ELEMENT_NAMES = {
     NI1: 'Ніша'
 };
 
+const METER_PROPERTY_KEYS = new Set([
+    'elStart', 'elEnd', 'elLength', '_thickness', 'elOffset',
+    'constructThickness', 'constructLength',
+    'figureBindingStart', 'figureBindingEnd', 'figureBindingOffset',
+    'constructWidth', 'constructHeight'
+]);
+
 /**
  * Витягує з масиву elements лінії всі присутні елементи у форматі:
  * [ { start, end, code } ]
@@ -50,6 +57,18 @@ window._syncHierarchyToCanvas = function () {
         canvas.hierarchyData      = G.hierarchyData;
         canvas.hierarchyIdCounter = G.hierarchyIdCounter;
     }
+};
+
+window._getBoundChildFigureArea = function (item) {
+    return (item.children || []).reduce(function(total, child) {
+        if (!child._figureBinding || Number(child._figureBinding.offset || 0) !== 0) return total;
+        return total + window._getFigureAreaIncludingBoundFigures(child);
+    }, 0);
+};
+
+window._getFigureAreaIncludingBoundFigures = function (item) {
+    const ownArea = Number(item.area);
+    return (Number.isFinite(ownArea) ? ownArea : 0) + window._getBoundChildFigureArea(item);
 };
 
 window.addToHierarchy = function (shapeData) {
@@ -295,6 +314,7 @@ const PROP_SCHEMA = {
 /** Зчитує значення властивості з item (зі спеціальними ключами) */
 function _propGet(item, key) {
     if (key === 'type') return item.type || 'room';
+    if (key === 'area') return window._getFigureAreaIncludingBoundFigures(item);
     if (key === 'customArea')    return item.customArea   ?? '';
     if (key === 'useCustomArea') return item.useCustomArea === true;
     if (key === 'showRoomLabel')  return item.showRoomLabel !== false;
@@ -320,6 +340,7 @@ function _propGet(item, key) {
     if (key === 'figureBindingStart') return item._figureBinding?.start ?? 0;
     if (key === 'figureBindingEnd') return item._figureBinding?.end ?? 0;
     if (key === 'figureBindingOffset') return item._figureBinding?.offset ?? 0;
+    if (key === 'figureBindingReverse') return item._figureBinding?.reverseReference === true;
     if (key === 'constructWidth' && item._figureBinding) {
         return Number(item._figureBinding.end) - Number(item._figureBinding.start);
     }
@@ -337,10 +358,10 @@ function _propGet(item, key) {
         const area = Math.max(0, Number(item.elEnd || 0) - Number(item.elStart || 0)) *
             Number(item.elThickness ?? 0.4);
         const sign = item.elPlacement === 'outside' ? '+' : '-';
-        return sign + area.toFixed(2) + ' м²';
+        return sign + area.toFixed(1) + ' м²';
     }
-    if (key === '_offsetX')   return item._offsetX != null ? item._offsetX.toFixed(1) : '—';
-    if (key === '_offsetY')   return item._offsetY != null ? item._offsetY.toFixed(1) : '—';
+    if (key === '_offsetX')   return item._offsetX != null ? item._offsetX.toFixed(2) : '—';
+    if (key === '_offsetY')   return item._offsetY != null ? item._offsetY.toFixed(2) : '—';
     if (key === 'visible')    return item.visible !== false;
     if (key === '_thickness') {
         if (item.elThickness != null) return item.elThickness;
@@ -495,7 +516,7 @@ function _propSet(item, key, value) {
     if (item._figureBinding && (
         key === 'figureBindingStart' || key === 'figureBindingEnd' ||
         key === 'figureBindingOffset' || key === 'constructWidth' ||
-        key === 'constructHeight'
+        key === 'constructHeight' || key === 'figureBindingReverse'
     )) {
         _setLineBoundFigureProperty(item, key, value);
         return;
@@ -512,17 +533,23 @@ function _propSet(item, key, value) {
         return;
     }
     if (key === 'area') {
-        item.area = value;
+        const area = Number(value);
+        item.area = Number.isFinite(area) && String(value).trim()
+            ? Math.max(0, area - window._getBoundChildFigureArea(item))
+            : value;
+        _redrawItemSvgGroup(item);
         renderHierarchy();
         return;
     }
     if (key === 'customArea') {
         item.customArea = value;
+        _redrawItemSvgGroup(item);
         renderHierarchy();
         return;
     }
     if (key === 'useCustomArea') {
         item.useCustomArea = value;
+        _redrawItemSvgGroup(item);
         renderHierarchy();
         return;
     }
@@ -532,7 +559,7 @@ function _propSet(item, key, value) {
         return;
     }
     if (key === 'labelFontSize' || key === 'dimensionFontSize') {
-        const v = parseFloat(value);
+        const v = window.normalizeMeasurement(value);
         item[key] = isNaN(v) ? null : v;
         _redrawItemSvgGroup(item);
         return;
@@ -543,7 +570,7 @@ function _propSet(item, key, value) {
         return;
     }
     if (item.constructFigure && (key === 'constructWidth' || key === 'constructHeight')) {
-        const dimension = parseFloat(String(value).replace(',', '.'));
+        const dimension = window.normalizeMeasurement(value);
         if (!Number.isFinite(dimension) || dimension <= 0) {
             showToast('Розмір фігури має бути більшим за 0', 'warning');
             renderProperties(item);
@@ -573,7 +600,7 @@ function _propSet(item, key, value) {
         key === 'elSide' || key === '_thickness' || key === 'elOffset' ||
         key === 'elPlacement' || key === 'elFill' || key === 'ignoreArea' ||
         key === 'reverseReference') {
-        const number = parseFloat(String(value).replace(',', '.'));
+        const number = window.normalizeMeasurement(value);
         if (key === 'elStart') item.elStart = Number.isFinite(number) ? number : 0;
         else if (key === 'elEnd') item.elEnd = Number.isFinite(number) ? number : 0;
         else if (key === 'elLength') item.elEnd = Number(item.elStart || 0) + (Number.isFinite(number) ? Math.max(0, number) : 0);
@@ -588,9 +615,9 @@ function _propSet(item, key, value) {
         return;
     }
     if (key === 'constructThickness' || key === 'constructFromEnd' || key === 'constructLength') {
-        if (key === 'constructThickness') item.constructThickness = parseFloat(String(value).replace(',', '.')) || CONSTRUCT_THICKNESS_M;
+        if (key === 'constructThickness') item.constructThickness = window.normalizeMeasurement(value) || CONSTRUCT_THICKNESS_M;
         else if (key === 'constructFromEnd') item.constructFromEnd = value;
-        else if (key === 'constructLength') item.constructLength = parseFloat(String(value).replace(',', '.')) || 0;
+        else if (key === 'constructLength') item.constructLength = window.normalizeMeasurement(value) || 0;
         if (typeof _redrawConstructItem === 'function') _redrawConstructItem(item);
         return;
     }
@@ -605,12 +632,16 @@ function _setLineBoundFigureProperty(item, key, value) {
         return;
     }
 
-    const number = parseFloat(String(value).replace(',', '.'));
     const binding = Object.assign({}, item._figureBinding);
     const previousBinding = item._figureBinding;
     const previousHeight = item.constructHeight;
     const totalLength = _getLineBoundFigureLength(parent, binding.hostLineId);
-    if (!Number.isFinite(number) || !Number.isFinite(totalLength) || totalLength <= 0) {
+    if (key === 'figureBindingReverse') {
+        binding.reverseReference = value === true;
+    }
+    const number = key === 'figureBindingReverse' ? 0 : window.normalizeMeasurement(value);
+    if ((key !== 'figureBindingReverse' && !Number.isFinite(number)) ||
+        !Number.isFinite(totalLength) || totalLength <= 0) {
         showToast('Некоректне значення прив’язки', 'warning');
         renderProperties(item);
         return;
@@ -664,6 +695,7 @@ function _setLineBoundFigureProperty(item, key, value) {
         renderProperties(item);
         return;
     }
+    _refreshFigureAreaAncestors(item);
     _syncHierarchyToCanvas();
     renderHierarchy();
     renderProperties(item);
@@ -752,6 +784,14 @@ function _redrawItemSvgGroup(item) {
     G.roomNumber  = savedRoom;
     G.isBuilding  = savedBuild;
 }
+
+window._refreshFigureAreaAncestors = function (item) {
+    let parent = _findParentInHierarchy(item.id);
+    while (parent) {
+        _redrawItemSvgGroup(parent);
+        parent = _findParentInHierarchy(parent.id);
+    }
+};
 
 /** Знаходить батьківський item за id дочірнього (по всьому дереву) */
 function _findParentItemById(childId, items, parent) {
@@ -875,6 +915,7 @@ function _syncElementToParentAndRedraw(elItem) {
     G.shapePoints = savedPoints;
     G.roomNumber  = savedRoom;
     G.isBuilding  = savedBuild;
+    _refreshFigureAreaAncestors(parent);
     // Оновлюємо назву елемента в ієрархії
     elItem.name = _buildElementName(elItem);
     renderHierarchy();
@@ -906,7 +947,8 @@ window.renderProperties = function (item) {
             { key: 'figureBindingLine', label: 'Лінія батьківської фігури', type: 'info', readOnly: true },
             { key: 'figureBindingStart', label: 'Початок прив’язки (м)', type: 'number', readOnly: false },
             { key: 'figureBindingEnd', label: 'Кінець прив’язки (м)', type: 'number', readOnly: false },
-            { key: 'figureBindingOffset', label: 'Відступ від лінії (м)', type: 'number', readOnly: false }
+            { key: 'figureBindingOffset', label: 'Відступ від лінії (м)', type: 'number', readOnly: false },
+            { key: 'figureBindingReverse', label: 'Відлік від кінця лінії', type: 'bool', readOnly: false }
         );
     }
     if (item.constructFigure) {
@@ -1090,7 +1132,12 @@ window.renderProperties = function (item) {
                 td1.textContent = '↳ ' + (ch.roomNumber || ch.name);
                 const td2 = document.createElement('td');
                 td2.style.cssText = 'color:#374151;padding:3px 6px;';
-                td2.textContent = ch.type === 'element' ? (ELEMENT_NAMES[ch.elCode] || ch.elCode || '—') : (ch.area ? ch.area + ' м²' : '—');
+                const childArea = ch.type === 'element'
+                    ? null
+                    : window._getFigureAreaIncludingBoundFigures(ch);
+                td2.textContent = ch.type === 'element'
+                    ? (ELEMENT_NAMES[ch.elCode] || ch.elCode || '—')
+                    : (childArea ? childArea.toFixed(1) + ' м²' : '—');
                 tr.appendChild(td1); tr.appendChild(td2);
                 tbl3.appendChild(tr);
             });
@@ -1281,31 +1328,51 @@ function _makeControl(prop, val, item) {
     }
 
     if (prop.type === 'number') {
+        const precision = prop.key === 'area' || prop.key === 'customArea' ? 1 : 2;
         if (prop.readOnly) {
             const span = document.createElement('span');
             span.style.cssText = 'font-size:11px;color:#374151;padding:2px 6px;display:block;';
-            span.textContent = val !== '' && val != null ? String(val) : '—';
+            span.textContent = val !== '' && val != null ? window.formatMeasurement(val, precision) : '—';
             return span;
         }
         const inp = document.createElement('input');
-        inp.type = 'text';
+        const isMeterValue = METER_PROPERTY_KEYS.has(prop.key);
+        inp.type = isMeterValue ? 'number' : 'text';
+        if (isMeterValue) {
+            inp.step = '0.01';
+            inp.min = '0';
+            inp.addEventListener('keydown', function(event) {
+                if (event.key !== ',') return;
+                event.preventDefault();
+                if (!inp.value.includes('.')) {
+                    inp.value += '.';
+                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            });
+        }
         inp.inputMode = 'decimal';
-        inp.value = val !== '' && val != null ? val : '';
+        inp.value = val !== '' && val != null ? window.formatMeasurement(val, precision) : '';
         inp.placeholder = prop.hint || '0';
         inp.style.cssText = BASE_STYLE;
         inp.oninput = function() {
-            // Нормалізуємо кому в крапку під час введення
-            const pos = inp.selectionStart;
-            const hadComma = inp.value.includes(',');
-            if (hadComma) {
-                inp.value = inp.value.replace(',', '.');
-                try { inp.setSelectionRange(pos, pos); } catch(e) {}
+            const limited = window.limitMeasurementInput(inp.value, precision);
+            if (limited !== inp.value) inp.value = limited;
+        };
+        const commitValue = function() {
+            if (!inp.value.trim()) {
+                _propSet(item, prop.key, '');
+                return;
             }
+            const number = window.normalizeMeasurement(inp.value, precision);
+            if (!Number.isFinite(number)) {
+                showToast('Введіть коректне числове значення', 'warning');
+                renderProperties(item);
+                return;
+            }
+            inp.value = window.formatMeasurement(number, precision);
+            _propSet(item, prop.key, number);
         };
-        inp.onchange = function() {
-            inp.value = inp.value.replace(',', '.');
-            _propSet(item, prop.key, inp.value);
-        };
+        inp.onchange = commitValue;
         _applyFocusStyle(inp);
         return inp;
     }
@@ -1401,7 +1468,10 @@ window.createHierarchyItemElement = function (item) {
         : (item.roomNumber || item.name);
     itemDiv.appendChild(label);
 
-    const displayArea = (item.useCustomArea && item.customArea) ? item.customArea : item.area;
+    const calculatedArea = window._getFigureAreaIncludingBoundFigures(item);
+    const displayArea = (item.useCustomArea && item.customArea)
+        ? window.formatMeasurement(item.customArea, 1)
+        : (calculatedArea ? calculatedArea.toFixed(1) : item.area);
     if (displayArea) {
         const areaLabel = document.createElement('span');
         areaLabel.style.fontSize = '10px';

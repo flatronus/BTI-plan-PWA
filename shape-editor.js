@@ -519,7 +519,7 @@ function _trySplitFreeLine(lineIndex) {
     }
 
     const specifiedLengths = entries.filter(function(value) { return value !== ''; })
-        .map(function(value) { return Number(value.replace(',', '.')); });
+        .map(function(value) { return window.normalizeMeasurement(value); });
     if (specifiedLengths.length === 0 || specifiedLengths.some(function(value) {
         return !Number.isFinite(value) || value <= 0;
     })) {
@@ -529,18 +529,18 @@ function _trySplitFreeLine(lineIndex) {
 
     const totalLength = Number(lineData.length);
     const specifiedTotal = specifiedLengths.reduce(function(sum, value) { return sum + value; }, 0);
-    if (!Number.isFinite(totalLength) || totalLength <= 0 || specifiedTotal > totalLength + 0.001) {
+    if (!Number.isFinite(totalLength) || totalLength <= 0 || specifiedTotal > totalLength + 0.005) {
         showToast('Сума довжин перевищує довжину старої лінії', 'warning');
         return true;
     }
 
-    const remainder = Number((totalLength - specifiedTotal).toFixed(3));
+    const remainder = window.normalizeMeasurement(totalLength - specifiedTotal);
     const segmentLengths = entries.includes('')
         ? entries.map(function(value) {
-            return value === '' ? remainder : Number(value.replace(',', '.'));
+            return value === '' ? remainder : window.normalizeMeasurement(value);
         })
         : specifiedLengths.slice();
-    if (!entries.includes('') && remainder > 0.001) segmentLengths.push(remainder);
+    if (!entries.includes('') && remainder >= 0.01) segmentLengths.push(remainder);
     if (entries.includes('') && remainder <= 0) {
         showToast('Для порожнього рядка має залишатися додатна довжина', 'warning');
         return true;
@@ -597,7 +597,7 @@ function _trySplitFreeLine(lineIndex) {
             ? toPoint.x : fromPoint.x + ux * distance;
         const endY = index === segmentLengths.length - 1
             ? toPoint.y : fromPoint.y + uy * distance;
-        const normalizedLength = Number(length.toFixed(3));
+        const normalizedLength = window.normalizeMeasurement(length);
         const elements = [{ type: 'number', value: normalizedLength }];
         const segment = {
             ...lineData,
@@ -607,7 +607,7 @@ function _trySplitFreeLine(lineIndex) {
             direction: 'free',
             lineType: 'line',
             elements,
-            code: `free\nline\n${normalizedLength.toFixed(3)}`,
+            code: `free\nline\n${normalizedLength.toFixed(2)}`,
             length: normalizedLength,
             isClosing: false,
             isPending: false,
@@ -765,8 +765,8 @@ window._updateClosingLineLength = function (closingIdx) {
     const fromPt = G.shapePoints.find(function(p) { return p.num === cl.from; });
     if (!fromPt) return;
     const toPt   = G.shapePoints[0];
-    const realLen = parseFloat(
-        (Math.sqrt(Math.pow(toPt.x - fromPt.x, 2) + Math.pow(toPt.y - fromPt.y, 2)) / SCALE).toFixed(3)
+    const realLen = window.normalizeMeasurement(
+        Math.sqrt(Math.pow(toPt.x - fromPt.x, 2) + Math.pow(toPt.y - fromPt.y, 2)) / SCALE
     );
     G.figureLines[closingIdx].length = realLen;
     for (let i = G.figureLines[closingIdx].elements.length - 1; i >= 0; i--) {

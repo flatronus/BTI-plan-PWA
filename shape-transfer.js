@@ -40,6 +40,13 @@ window._fillSvgGroup = function (group, offsetX, offsetY, parentHierarchyItem) {
             line.setAttribute('vector-effect', 'non-scaling-stroke');
             group.appendChild(line);
         }
+        const isSharedBoundary = lineData._sharedBoundary ||
+            (parentHierarchyItem?._figureBinding && lineData.id === 1 &&
+                Number(parentHierarchyItem._figureBinding.offset || 0) === 0);
+        if (isSharedBoundary && group.lastElementChild) {
+            group.lastElementChild.setAttribute('stroke', '#fff');
+            group.lastElementChild.setAttribute('stroke-width', '3');
+        }
 
         const dimFsMm = parentHierarchyItem && parentHierarchyItem.dimensionFontSize != null
             ? parentHierarchyItem.dimensionFontSize : DEFAULT_FONT_SIZE_MM;
@@ -64,9 +71,12 @@ window._fillSvgGroup = function (group, offsetX, offsetY, parentHierarchyItem) {
         const phi = parentHierarchyItem;
         const showLabel  = !phi || phi.showRoomLabel !== false;
         const labelStyle = (phi && phi.roomLabelStyle === 'leader') ? 'leader' : 'inline';
+        const figureArea = phi && typeof window._getFigureAreaIncludingBoundFigures === 'function'
+            ? window._getFigureAreaIncludingBoundFigures(phi)
+            : Number(phi && phi.area);
         const displayArea = phi && phi.useCustomArea && phi.customArea
-            ? phi.customArea
-            : (phi ? phi.area : null);
+            ? window.formatMeasurement(phi.customArea, 1)
+            : (Number.isFinite(figureArea) && figureArea > 0 ? figureArea.toFixed(1) : null);
 
         if (showLabel) {
             const lfsMm = phi && phi.labelFontSize != null ? phi.labelFontSize : DEFAULT_FONT_SIZE_MM;
@@ -382,7 +392,11 @@ window.transferFigureToMainCanvas = function () {
                 existingItem._offsetY = useOffsetY;
             }
 
+            _redrawItemSvgGroup(existingItem);
             _refreshChildAnchors(existingItem, useOffsetX, useOffsetY);
+            if (typeof _refreshFigureAreaAncestors === 'function') {
+                _refreshFigureAreaAncestors(existingItem);
+            }
 
             appState.editingHierarchyItemId = null;
             renderHierarchy();
@@ -541,8 +555,8 @@ function _makeBoundFigureLine(id, from, to, length, curveHeight, chordLength, cl
         lineType: isCurve ? 'curve' : 'line',
         elements,
         code: isCurve
-            ? 'free\ncurve\n' + chordLength.toFixed(3) + '\n' + curveHeight.toFixed(3)
-            : 'right\nline\n' + length.toFixed(3),
+            ? 'free\ncurve\n' + chordLength.toFixed(2) + '\n' + curveHeight.toFixed(2)
+            : 'right\nline\n' + length.toFixed(2),
         length: isCurve ? chordLength : length,
         isClosing: closing,
         isDiagonal: false,
@@ -571,19 +585,27 @@ window._buildLineBoundFigureGeometry = function (parentItem, binding, height) {
     if (!context || context.length <= 0) return null;
 
     const totalLength = context.length / SCALE;
-    const width = Math.max(0, Math.min(totalLength, Number(binding.end) - Number(binding.start)));
-    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return null;
+    const referenceStart = window.normalizeMeasurement(binding.start);
+    const referenceEnd = window.normalizeMeasurement(binding.end);
+    const heightValue = window.normalizeMeasurement(height);
+    const width = window.normalizeMeasurement(referenceEnd - referenceStart);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(heightValue) || heightValue <= 0 ||
+        referenceStart < 0 || referenceEnd > totalLength) return null;
 
-    const start = Math.max(0, Math.min(Number(binding.start) || 0, totalLength - width));
+    const maxStart = Math.floor((totalLength - width + 1e-8) * 100) / 100;
+    const measuredStart = binding.reverseReference === true
+        ? totalLength - referenceEnd
+        : referenceStart;
+    const start = Math.max(0, Math.min(measuredStart, maxStart));
     const end = start + width;
-    binding.start = start;
-    binding.end = end;
-    binding.offset = Math.max(0, Number(binding.offset) || 0);
+    binding.start = referenceStart;
+    binding.end = referenceEnd;
+    binding.offset = Math.max(0, window.normalizeMeasurement(binding.offset) || 0);
     binding.side = binding.side === -1 ? -1 : 1;
 
     const side = binding.side;
     const offsetPx = binding.offset * SCALE;
-    const heightPx = height * SCALE;
+    const heightPx = heightValue * SCALE;
     let baseStart, baseEnd, outerEnd, outerStart, baseMid, outerMid;
 
     if (context.curve) {
@@ -666,8 +688,9 @@ window._buildLineBoundFigureGeometry = function (parentItem, binding, height) {
         _makeBoundFigureLine(3, 3, 4, width, outerCurveHeight, outerChordLength, false),
         _makeBoundFigureLine(4, 4, 1, height, null, 0, true)
     ];
+    lines[0]._sharedBoundary = binding.offset === 0;
 
-    return { points, lines, width, height, transform: context.transform };
+    return { points, lines, width, height: heightValue, transform: context.transform };
 }
 
 window._refreshLineBoundFigure = function (childItem, parentItem) {
