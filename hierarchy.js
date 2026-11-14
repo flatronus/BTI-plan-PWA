@@ -941,23 +941,28 @@ window.renderProperties = function (item) {
         : item.type === 'element'
             ? schema.filter(function(prop) { return prop.key !== 'elSide'; })
             : schema.slice();
-    if (item._figureBinding) {
-        visibleSchema.push(
-            { group: 'Прив’язка до лінії' },
-            { key: 'figureBindingLine', label: 'Лінія батьківської фігури', type: 'info', readOnly: true },
-            { key: 'figureBindingStart', label: 'Початок прив’язки (м)', type: 'number', readOnly: false },
-            { key: 'figureBindingEnd', label: 'Кінець прив’язки (м)', type: 'number', readOnly: false },
-            { key: 'figureBindingOffset', label: 'Відступ від лінії (м)', type: 'number', readOnly: false },
-            { key: 'figureBindingReverse', label: 'Відлік від кінця лінії', type: 'bool', readOnly: false }
-        );
-    }
+    const bindingSchema = item._figureBinding ? [
+        { group: 'Прив’язка до лінії' },
+        { key: 'figureBindingLine', label: 'Лінія батьківської фігури', type: 'info', readOnly: true },
+        { key: 'figureBindingStart', label: 'Початок прив’язки (м)', type: 'number', readOnly: false },
+        { key: 'figureBindingEnd', label: 'Кінець прив’язки (м)', type: 'number', readOnly: false },
+        { key: 'figureBindingOffset', label: 'Відступ від лінії (м)', type: 'number', readOnly: false },
+        { key: 'figureBindingReverse', label: 'Відлік від кінця лінії', type: 'bool', readOnly: false }
+    ] : [];
+    const figureSchema = item.constructFigure ? [
+        { group: item._figureBinding ? 'Розміри прив’язаної групи' : 'Розміри прямокутника' },
+        { key: 'constructWidth', label: 'Ширина (м)', type: 'number', readOnly: false },
+        { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false },
+        { type: 'constructDimensionTable' }
+    ] : [];
     if (item.constructFigure) {
-        visibleSchema.push(
-            { group: item._figureBinding ? 'Розміри прив’язаної фігури' : 'Розміри прямокутника' },
-            { key: 'constructWidth', label: 'Ширина (м)', type: 'number', readOnly: false },
-            { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false },
-            { type: 'constructDimensionTable' }
-        );
+        const remainingSectionsIndex = visibleSchema.findIndex(function(prop) {
+            return ['Геометрія', 'Позиція', 'Відображення'].includes(prop.group);
+        });
+        const insertIndex = remainingSectionsIndex === -1 ? visibleSchema.length : remainingSectionsIndex;
+        visibleSchema.splice(insertIndex, 0, ...bindingSchema, ...figureSchema);
+    } else if (item._figureBinding) {
+        visibleSchema.push(...bindingSchema);
     }
 
     /* ── Заголовок панелі з кнопкою + ── */
@@ -1342,10 +1347,14 @@ function _makeControl(prop, val, item) {
             inp.step = '0.01';
             inp.min = '0';
             inp.addEventListener('keydown', function(event) {
-                if (event.key !== ',') return;
+                if (event.key !== ',' && event.code !== 'Comma' &&
+                    event.code !== 'NumpadDecimal') return;
                 event.preventDefault();
                 if (!inp.value.includes('.')) {
-                    inp.value += '.';
+                    const current = inp.value;
+                    inp.type = 'text';
+                    inp.value = (current || '0') + '.';
+                    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch(e) {}
                     inp.dispatchEvent(new Event('input', { bubbles: true }));
                 }
             });
@@ -1360,6 +1369,7 @@ function _makeControl(prop, val, item) {
         };
         const commitValue = function() {
             if (!inp.value.trim()) {
+                if (isMeterValue) inp.type = 'number';
                 _propSet(item, prop.key, '');
                 return;
             }
@@ -1370,6 +1380,7 @@ function _makeControl(prop, val, item) {
                 return;
             }
             inp.value = window.formatMeasurement(number, precision);
+            if (isMeterValue) inp.type = 'number';
             _propSet(item, prop.key, number);
         };
         inp.onchange = commitValue;
