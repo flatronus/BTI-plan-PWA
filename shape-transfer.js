@@ -543,12 +543,27 @@ function _makeBoundFigureLine(id, from, to, length, curveHeight, chordLength, cl
         code: isCurve
             ? 'free\ncurve\n' + chordLength.toFixed(3) + '\n' + curveHeight.toFixed(3)
             : 'right\nline\n' + length.toFixed(3),
-        length,
+        length: isCurve ? chordLength : length,
         isClosing: closing,
         isDiagonal: false,
         dimensionVisible: true,
         dimensionRotated: false
     };
+}
+
+function _getBoundFigureLineLength(lineData) {
+    if (lineData.lineType !== 'curve') return Math.max(0, Number(lineData.length) || 0);
+    const values = (lineData.elements || [])
+        .filter(function(element) { return element.type === 'number'; })
+        .map(function(element) { return Number(element.value); });
+    const chord = values[0];
+    const height = values[1];
+    if (!Number.isFinite(chord) || !Number.isFinite(height) || chord <= 0 || height === 0) {
+        return Math.max(0, Number(lineData.length) || 0);
+    }
+    const radius = (chord * chord + 4 * height * height) / (8 * Math.abs(height));
+    const angle = 4 * Math.atan2(2 * Math.abs(height), chord);
+    return radius * angle;
 }
 
 window._buildLineBoundFigureGeometry = function (parentItem, binding, height) {
@@ -662,6 +677,50 @@ window._refreshLineBoundFigure = function (childItem, parentItem) {
         Number(childItem.constructHeight)
     );
     if (!geometry) return false;
+
+    geometry.lines.forEach(function(lineData) {
+        const previousLine = (childItem.figureLines || []).find(function(previous) {
+            return previous.id === lineData.id;
+        });
+        if (!previousLine) return;
+
+        if (typeof previousLine.dimensionVisible === 'boolean') {
+            lineData.dimensionVisible = previousLine.dimensionVisible;
+        }
+        if (typeof previousLine.dimensionRotated === 'boolean') {
+            lineData.dimensionRotated = previousLine.dimensionRotated;
+        }
+
+        const attachedElements = [];
+        const elements = previousLine.elements || [];
+        for (let index = 0; index < elements.length - 2; index++) {
+            if (elements[index]?.type === 'number' &&
+                elements[index + 1]?.type === 'number' &&
+                elements[index + 2]?.type === 'element') {
+                attachedElements.push(
+                    JSON.parse(JSON.stringify(elements[index])),
+                    JSON.parse(JSON.stringify(elements[index + 1])),
+                    JSON.parse(JSON.stringify(elements[index + 2]))
+                );
+                index += 2;
+            }
+        }
+        lineData.elements.push.apply(lineData.elements, attachedElements);
+        const availableLength = _getBoundFigureLineLength(lineData);
+        for (let index = 0; index < lineData.elements.length - 2; index++) {
+            const start = lineData.elements[index];
+            const end = lineData.elements[index + 1];
+            const element = lineData.elements[index + 2];
+            if (start.type !== 'number' || end.type !== 'number' || element.type !== 'element') continue;
+            start.value = Math.max(0, Math.min(availableLength, Number(start.value) || 0));
+            end.value = Math.max(start.value, Math.min(availableLength, Number(end.value) || 0));
+            if (typeof element.lineLength === 'number') element.lineLength = availableLength;
+            index += 2;
+        }
+        if (typeof _rebuildLineCode === 'function') {
+            lineData.code = _rebuildLineCode(lineData.elements, lineData.direction, lineData.lineType);
+        }
+    });
 
     childItem.shapePoints = geometry.points;
     childItem.figureLines = geometry.lines;

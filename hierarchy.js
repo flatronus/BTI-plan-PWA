@@ -607,6 +607,8 @@ function _setLineBoundFigureProperty(item, key, value) {
 
     const number = parseFloat(String(value).replace(',', '.'));
     const binding = Object.assign({}, item._figureBinding);
+    const previousBinding = item._figureBinding;
+    const previousHeight = item.constructHeight;
     const totalLength = _getLineBoundFigureLength(parent, binding.hostLineId);
     if (!Number.isFinite(number) || !Number.isFinite(totalLength) || totalLength <= 0) {
         showToast('Некоректне значення прив’язки', 'warning');
@@ -615,7 +617,7 @@ function _setLineBoundFigureProperty(item, key, value) {
     }
 
     if (key === 'figureBindingStart') {
-        if (number < 0 || number >= Number(binding.end)) {
+        if (number < 0 || number >= Number(binding.end) || Number(binding.end) > totalLength) {
             showToast('Початок має бути меншим за кінець прив’язки', 'warning');
             renderProperties(item);
             return;
@@ -654,6 +656,10 @@ function _setLineBoundFigureProperty(item, key, value) {
     item._figureBinding = binding;
     item.constructWidth = Number(binding.end) - Number(binding.start);
     if (!_refreshLineBoundFigure(item, parent)) {
+        item._figureBinding = previousBinding;
+        item.constructHeight = previousHeight;
+        item.constructWidth = Number(previousBinding.end) - Number(previousBinding.start);
+        _refreshLineBoundFigure(item, parent);
         showToast('Не вдалося оновити прив’язану фігуру', 'error');
         renderProperties(item);
         return;
@@ -907,11 +913,9 @@ window.renderProperties = function (item) {
         visibleSchema.push(
             { group: item._figureBinding ? 'Розміри прив’язаної фігури' : 'Розміри прямокутника' },
             { key: 'constructWidth', label: 'Ширина (м)', type: 'number', readOnly: false },
-            { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false }
+            { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false },
+            { type: 'constructDimensionTable' }
         );
-        if (!item._figureBinding) {
-            visibleSchema.push({ type: 'constructDimensionTable' });
-        }
     }
 
     /* ── Заголовок панелі з кнопкою + ── */

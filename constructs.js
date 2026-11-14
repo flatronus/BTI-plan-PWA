@@ -17,7 +17,7 @@ window.initConstructsPanel = function () {
 
     const hint = document.createElement('div');
     hint.style.cssText = 'font-size:11px;color:#6b7280;padding:6px 4px 8px;';
-    hint.textContent = 'Перетягніть фігуру на полотно, інші конструктиви — на лінію фігури.';
+    hint.textContent = 'Перетягніть «Фігуру» на полотно або лінію; інші конструктиви — на лінію фігури.';
     body.appendChild(hint);
 
     // Полоска конструктиву 0.20 м
@@ -157,7 +157,7 @@ function _makeFigureStrip() {
         'background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;',
         'cursor:grab;user-select:none;',
     ].join('');
-    wrap.title = 'Перетягніть прямокутник на полотно';
+    wrap.title = 'Перетягніть прямокутник на полотно або лінію фігури';
 
     const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     preview.setAttribute('width', '80');
@@ -505,7 +505,10 @@ function _placeBoundFigure(lineInfo) {
     }
 
     const width = Math.min(CONSTRUCT_FIGURE_SIZE_M, lineLength);
-    const center = Math.max(0, Math.min(1, lineInfo.dropFraction || 0.5)) * lineLength;
+    const dropFraction = Number.isFinite(lineInfo.dropFraction)
+        ? Math.max(0, Math.min(1, lineInfo.dropFraction))
+        : 0.5;
+    const center = dropFraction * lineLength;
     const start = Math.max(0, Math.min(lineLength - width, center - width / 2));
     const binding = {
         hostLineId: hostLine.id,
@@ -527,7 +530,9 @@ function _placeBoundFigure(lineInfo) {
 
     const item = addToHierarchy({
         name: 'Фігура',
-        area: (geometry.width * geometry.height).toFixed(1),
+        area: typeof calculateFigureArea === 'function'
+            ? calculateFigureArea(geometry.lines, geometry.points).toFixed(1)
+            : (geometry.width * geometry.height).toFixed(1),
         figureLines: geometry.lines,
         shapePoints: geometry.points,
         svgGroup: group,
@@ -551,7 +556,9 @@ function _getBoundFigureSide(lineInfo) {
     let anchor;
     if (lineInfo.curve) {
         const point = lineInfo.curve.pointAtDistance(
-            lineInfo.curve.arcLength * Math.max(0, Math.min(1, lineInfo.dropFraction || 0.5))
+            lineInfo.curve.arcLength * (Number.isFinite(lineInfo.dropFraction)
+                ? Math.max(0, Math.min(1, lineInfo.dropFraction))
+                : 0.5)
         );
         normal = { x: point.px, y: point.py };
         anchor = point;
@@ -560,7 +567,9 @@ function _getBoundFigureSide(lineInfo) {
         const dy = lineInfo.y2 - lineInfo.y1;
         const length = Math.hypot(dx, dy) || 1;
         normal = { x: dy / length, y: -dx / length };
-        const fraction = Math.max(0, Math.min(1, lineInfo.dropFraction || 0.5));
+        const fraction = Number.isFinite(lineInfo.dropFraction)
+            ? Math.max(0, Math.min(1, lineInfo.dropFraction))
+            : 0.5;
         anchor = {
             x: lineInfo.x1 + dx * fraction,
             y: lineInfo.y1 + dy * fraction
