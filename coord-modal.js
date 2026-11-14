@@ -202,6 +202,68 @@ window.parseCoordinateInput = function (inputText) {
     }
 
     const elements = [];
+    const chimneyIndex = lines.findIndex(function(line, index) {
+        return index > startIndex && line.replace(/^-/, '') === 'KO1';
+    });
+    if (chimneyIndex !== -1) {
+        const parseNumber = function(value) {
+            const number = parseFloat(value.replace(',', '.'));
+            return Number.isFinite(number) ? number : null;
+        };
+        const numbersBefore = lines.slice(startIndex + 1, chimneyIndex).map(parseNumber);
+        const numbersAfter = lines.slice(chimneyIndex + 1).map(parseNumber);
+        const isOutside = lines[chimneyIndex].startsWith('-');
+        let lineLength, start, end, thickness, offset;
+        let trailingStart;
+
+        if (lineType === 'line' && numbersBefore.length === 0) {
+            if (numbersAfter.length < 5 || numbersAfter.slice(0, 5).some(value => value === null)) {
+                showToast('Формат KO1: початок, кінець, товщина, відступ, довжина лінії', 'warning');
+                return null;
+            }
+            [start, end, thickness, offset, lineLength] = numbersAfter;
+            if (start < 0 || end < start || end > lineLength ||
+                thickness <= 0 || offset < 0 || lineLength <= 0) {
+                showToast('KO1: початок і кінець мають бути в межах лінії; товщина має бути більшою за 0', 'warning');
+                return null;
+            }
+            trailingStart = chimneyIndex + 6;
+            elements.push(
+                { type: 'number', value: lineLength },
+                { type: 'number', value: start },
+                { type: 'number', value: end },
+                { type: 'element', value: isOutside ? '-KO1' : 'KO1', thickness, offset, placement: isOutside ? 'outside' : 'inside', lineLength }
+            );
+        } else {
+            const requiredBefore = lineType === 'curve' ? 2 : 1;
+            const requiredAfter = lineType === 'curve' ? 4 : 4;
+            if (numbersBefore.length < requiredBefore ||
+                numbersBefore.slice(0, requiredBefore).some(value => value === null) ||
+                numbersAfter.length < requiredAfter ||
+                numbersAfter.slice(0, requiredAfter).some(value => value === null)) {
+                showToast('Невірні параметри KO1', 'warning');
+                return null;
+            }
+            elements.push(...numbersBefore.slice(0, requiredBefore).map(value => ({ type: 'number', value })));
+            lineLength = numbersBefore[0];
+            [start, end, thickness, offset] = numbersAfter;
+            trailingStart = chimneyIndex + 5;
+            elements.push(
+                { type: 'number', value: start },
+                { type: 'number', value: end },
+                { type: 'element', value: isOutside ? '-KO1' : 'KO1', thickness, offset,
+                    placement: isOutside ? 'outside' : 'inside', lineLength: numbersBefore[0] }
+            );
+        }
+        for (let i = trailingStart; i < lines.length; i++) {
+            const number = parseNumber(lines[i]);
+            elements.push(number === null
+                ? { type: 'element', value: lines[i] }
+                : { type: 'number', value: number });
+        }
+        return { direction, lineType, elements, lineLength };
+    }
+
     for (let i = startIndex + 1; i < lines.length; i++) {
         const numValue = parseFloat(lines[i].replace(',', '.'));
         if (!isNaN(numValue)) {
@@ -213,5 +275,3 @@ window.parseCoordinateInput = function (inputText) {
 
     return { direction, lineType, elements };
 };
-
-

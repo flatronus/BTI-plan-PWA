@@ -26,7 +26,15 @@ window.extractLineElements = function (elements) {
             let code = elements[i + 2].value;
             let side = 1;
             if (code.startsWith('-')) { side = -1; code = code.substring(1); }
-            result.push({ start: elements[i].value, end: elements[i + 1].value, code, side });
+            result.push({
+                start: elements[i].value,
+                end: elements[i + 1].value,
+                code,
+                side,
+                thickness: elements[i + 2].thickness,
+                offset: elements[i + 2].offset,
+                fill: elements[i + 2].fill
+            });
             i += 2;
         }
     }
@@ -257,7 +265,15 @@ const PROP_SCHEMA = {
         { key: '_lineDef',    label: 'Лінія',        type: 'info',   readOnly: true  },
         { key: 'elStart',     label: 'Від (м)',      type: 'number', readOnly: false },
         { key: 'elEnd',       label: 'До (м)',       type: 'number', readOnly: false },
+        { key: 'elLength',    label: 'Довжина (м)',  type: 'number', readOnly: false },
         { key: '_thickness',  label: 'Товщина (м)',  type: 'number', readOnly: false, hint: 'За замовчуванням 0.20' },
+        { key: 'elOffset',    label: 'Відступ основи (м)', type: 'number', readOnly: false, hint: '0 — по лінії фігури' },
+        { key: 'elPlacement', label: 'Сторона фігури', type: 'select', readOnly: false,
+          options: [{ v: 'inside', l: 'Всередині' }, { v: 'outside', l: 'Ззовні' }] },
+        { key: 'elArea',      label: 'Площа елемента (м²)', type: 'info', readOnly: true },
+        { key: 'ignoreArea',  label: 'Не враховувати площу', type: 'bool', readOnly: false },
+        { key: 'reverseReference', label: 'Відлік від кінця лінії', type: 'bool', readOnly: false },
+        { key: 'elFill',      label: 'Колір заливки', type: 'color', readOnly: false },
         { key: 'elSide',      label: 'Сторона',      type: 'select', readOnly: false, options: [{ v: 1, l: 'Права (1)' }, { v: -1, l: 'Ліва (-1)' }] },
         { group: 'Відображення' },
         { key: 'visible',     label: 'Видимий',      type: 'bool',   readOnly: false },
@@ -283,6 +299,18 @@ function _propGet(item, key) {
     if (key === '_lineCount') return (item.figureLines || []).length;
     if (key === '_ptCount')   return (item.shapePoints || []).length;
     if (key === '_lineDef')   return (item.lineFrom ?? '?') + ' → ' + (item.lineTo ?? '?');
+    if (key === 'elLength') return Math.max(0, Number(item.elEnd || 0) - Number(item.elStart || 0));
+    if (key === 'ignoreArea') return item.ignoreArea === true;
+    if (key === 'reverseReference') return item.reverseReference === true;
+    if (key === 'elOffset') return item.elOffset ?? 0;
+    if (key === 'elPlacement') return item.elPlacement || 'inside';
+    if (key === 'elFill') return item.elFill || '#ff0000';
+    if (key === 'elArea') {
+        const area = Math.max(0, Number(item.elEnd || 0) - Number(item.elStart || 0)) *
+            Number(item.elThickness ?? 0.4);
+        const sign = item.elPlacement === 'outside' ? '+' : '-';
+        return sign + area.toFixed(2) + ' м²';
+    }
     if (key === '_offsetX')   return item._offsetX != null ? item._offsetX.toFixed(1) : '—';
     if (key === '_offsetY')   return item._offsetY != null ? item._offsetY.toFixed(1) : '—';
     if (key === 'visible')    return item.visible !== false;
@@ -354,11 +382,20 @@ function _propSet(item, key, value) {
         _redrawItemSvgGroup(item);
         return;
     }
-    if (key === 'elStart' || key === 'elEnd' || key === 'elSide' || key === '_thickness') {
-        if (key === 'elStart') item.elStart = parseFloat(value) || 0;
-        else if (key === 'elEnd') item.elEnd = parseFloat(value) || 0;
+    if (key === 'elStart' || key === 'elEnd' || key === 'elLength' ||
+        key === 'elSide' || key === '_thickness' || key === 'elOffset' ||
+        key === 'elPlacement' || key === 'elFill' || key === 'ignoreArea' ||
+        key === 'reverseReference') {
+        const number = parseFloat(String(value).replace(',', '.'));
+        if (key === 'elStart') item.elStart = Number.isFinite(number) ? number : 0;
+        else if (key === 'elEnd') item.elEnd = Number.isFinite(number) ? number : 0;
+        else if (key === 'elLength') item.elEnd = Number(item.elStart || 0) + (Number.isFinite(number) ? Math.max(0, number) : 0);
         else if (key === 'elSide') item.elSide = parseInt(value);
-        else if (key === '_thickness') item.elThickness = parseFloat(value) || ELEMENT_THICKNESS;
+        else if (key === '_thickness') item.elThickness = Number.isFinite(number) && number > 0 ? number : ELEMENT_THICKNESS;
+        else if (key === 'elOffset') item.elOffset = Number.isFinite(number) ? Math.max(0, number) : 0;
+        else if (key === 'elPlacement') item.elPlacement = value;
+        else if (key === 'elFill') item.elFill = value;
+        else if (key === 'ignoreArea' || key === 'reverseReference') item[key] = value;
         // Синхронізуємо зміни у lineData батьківської фігури і перемальовуємо
         _syncElementToParentAndRedraw(item);
         return;
@@ -410,6 +447,33 @@ function _findParentItemById(childId, items, parent) {
  */
 function _rebuildLineCode(elements, direction, lineType) {
     var lines = [direction || 'free', lineType || 'line'];
+    var chimneyIndex = (elements || []).findIndex(function(element) {
+        return element.type === 'element' && String(element.value).replace(/^-/, '') === 'KO1';
+    });
+    if (chimneyIndex !== -1) {
+        var chimney = elements[chimneyIndex];
+        var numbers = (elements || []).filter(function(element) { return element.type === 'number'; });
+        var length = chimney.lineLength ?? numbers[0]?.value ?? 0;
+        if (lineType === 'curve') lines.push(String(length), String(numbers[1]?.value ?? 0));
+        lines.push(chimney.value);
+        lines.push(
+            String(elements[chimneyIndex - 2]?.value ?? 0),
+            String(elements[chimneyIndex - 1]?.value ?? 0),
+            String(chimney.thickness ?? 0.4),
+            String(chimney.offset ?? 0)
+        );
+        if (lineType === 'line') lines.push(String(length));
+        for (var i = 0; i < (elements || []).length - 2; i++) {
+            if (i === chimneyIndex - 2) continue;
+            if (elements[i]?.type === 'number' && elements[i + 1]?.type === 'number' &&
+                elements[i + 2]?.type === 'element' &&
+                String(elements[i + 2].value).replace(/^-/, '') !== 'KO1') {
+                lines.push(String(elements[i].value), String(elements[i + 1].value), elements[i + 2].value);
+                i += 2;
+            }
+        }
+        return lines.join('\n');
+    }
     (elements || []).forEach(function(el) {
         lines.push(el.type === 'number' ? String(el.value) : el.value);
     });
@@ -451,8 +515,19 @@ function _syncElementToParentAndRedraw(elItem) {
             elements[i].value     = elItem.elStart;
             elements[i+1].value   = elItem.elEnd;
             var newSide  = (elItem.elSide != null) ? elItem.elSide : side;
-            var newCode  = newSide === -1 ? ('-' + code) : code;
+            var newCode  = code === 'KO1'
+                ? (elItem.elPlacement === 'outside' ? '-KO1' : 'KO1')
+                : (newSide === -1 ? ('-' + code) : code);
             elements[i+2].value   = newCode;
+            if (code === 'KO1') {
+                elements[i+2].thickness = elItem.elThickness ?? 0.4;
+                elements[i+2].offset = elItem.elOffset ?? 0;
+                elements[i+2].fill = elItem.elFill || '#ff0000';
+                elements[i+2].ignoreArea = elItem.ignoreArea === true;
+                elements[i+2].reverseReference = elItem.reverseReference === true;
+                elements[i+2].placement = elItem.elPlacement || 'inside';
+                elements[i+2].lineLength = elements[i+2].lineLength ?? lineData.length;
+            }
             elItem._elKey = 'wi_' + lineData.from + '_' + (lineData.to ?? 'c') + '_' + code + '_' + elItem.elStart;
             // Перебудовуємо lineData.code щоб модалка координат показувала актуальні числа
             lineData.code = _rebuildLineCode(lineData.elements, lineData.direction, lineData.lineType);
@@ -460,7 +535,7 @@ function _syncElementToParentAndRedraw(elItem) {
             i += 2;
         }
     }
-    if (elItem.elCode === 'OT1' && typeof calculateFigureArea === 'function') {
+    if ((elItem.elCode === 'OT1' || elItem.elCode === 'KO1') && typeof calculateFigureArea === 'function') {
         parent.area = calculateFigureArea(parent.figureLines, parent.shapePoints).toFixed(1);
     }
     // Перемальовуємо SVG-групу батька
@@ -480,6 +555,7 @@ function _syncElementToParentAndRedraw(elItem) {
     // Оновлюємо назву елемента в ієрархії
     elItem.name = _buildElementName(elItem);
     renderHierarchy();
+    if (G.selectedHierarchyItem === elItem.id) renderProperties(elItem);
 }
 
 /** Рендерить панель Властивості для вибраного елемента */
@@ -493,6 +569,14 @@ window.renderProperties = function (item) {
     }
 
     const schema = PROP_SCHEMA[item.type] || PROP_SCHEMA.room;
+    const visibleSchema = item.type === 'element' && item.elCode !== 'KO1'
+        ? schema.filter(function(prop) {
+            return !['elLength', 'elOffset', 'elPlacement', 'elArea', 'ignoreArea',
+                'reverseReference', 'elFill'].includes(prop.key);
+        })
+        : item.type === 'element'
+            ? schema.filter(function(prop) { return prop.key !== 'elSide'; })
+            : schema;
 
     /* ── Заголовок панелі з кнопкою + ── */
     const titleBar = document.createElement('div');
@@ -523,7 +607,7 @@ window.renderProperties = function (item) {
     const table = document.createElement('table');
     table.style.cssText = 'width:100%;border-collapse:collapse;font-size:11px;';
 
-    schema.forEach(function(prop) {
+    visibleSchema.forEach(function(prop) {
         /* Заголовок групи */
         if (prop.group) {
             const tr = document.createElement('tr');
@@ -788,6 +872,16 @@ function _makeControl(prop, val, item) {
         inp.style.cssText = BASE_STYLE;
         inp.onchange = function() { _propSet(item, prop.key, inp.value.trim()); };
         _applyFocusStyle(inp);
+        return inp;
+    }
+
+    if (prop.type === 'color') {
+        const inp = document.createElement('input');
+        inp.type = 'color';
+        inp.value = /^#[0-9a-f]{6}$/i.test(String(val)) ? val : '#ff0000';
+        inp.disabled = !!prop.readOnly;
+        inp.style.cssText = 'width:100%;height:22px;padding:1px;border:0;background:transparent;cursor:pointer;';
+        inp.onchange = function() { _propSet(item, prop.key, inp.value); };
         return inp;
     }
 

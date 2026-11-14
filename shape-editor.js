@@ -71,6 +71,13 @@ window.calculateFigureArea = function (figureLines, shapePoints) {
             if (code === 'OT1') {
                 const length = Math.abs(Number(end.value) - Number(start.value));
                 if (Number.isFinite(length)) area += length * ELEMENT_THICKNESS;
+            } else if (code === 'KO1') {
+                const length = Math.abs(Number(end.value) - Number(start.value));
+                const thickness = Number(element.thickness);
+                if (Number.isFinite(length) && Number.isFinite(thickness) && element.ignoreArea !== true) {
+                    const isOutside = element.value.startsWith('-');
+                    area += length * thickness * (isOutside ? 1 : -1);
+                }
             }
             i += 2;
         }
@@ -221,7 +228,7 @@ window.drawLineOnCanvas = function (parsedData) {
     }
 
     if (parsedData.direction === 'free') {
-        const lineLength = parsedData.elements.find(el => el.type === 'number')?.value || 0;
+        const lineLength = parsedData.lineLength ?? parsedData.elements.find(el => el.type === 'number')?.value ?? 0;
 
         if (!isClosing) {
             const lineData = _makeLineData(G.lineIdCounter, lastPoint.num, null, parsedData, lineLength, false, true);
@@ -256,10 +263,14 @@ window.drawLineOnCanvas = function (parsedData) {
     const lengthElements = parsedData.lineType === 'curve'
         ? parsedData.elements
         : parsedData.elements.slice().reverse();
-    for (let i = 0; i < lengthElements.length; i++) {
-        if (lengthElements[i].type === 'number') {
-            lineLength = parseFloat(lengthElements[i].value);
-            break;
+    if (Number.isFinite(parsedData.lineLength)) {
+        lineLength = parsedData.lineLength;
+    } else {
+        for (let i = 0; i < lengthElements.length; i++) {
+            if (lengthElements[i].type === 'number') {
+                lineLength = parseFloat(lengthElements[i].value);
+                break;
+            }
         }
     }
 
@@ -387,8 +398,12 @@ window.updateExistingLine = function (lineId, parsedData) {
         ? parsedData.elements
         : parsedData.elements.slice().reverse();
     let newLength = 0;
-    for (let i = 0; i < lengthElements.length; i++) {
-        if (lengthElements[i].type === 'number') { newLength = lengthElements[i].value; break; }
+    if (Number.isFinite(parsedData.lineLength)) {
+        newLength = parsedData.lineLength;
+    } else {
+        for (let i = 0; i < lengthElements.length; i++) {
+            if (lengthElements[i].type === 'number') { newLength = lengthElements[i].value; break; }
+        }
     }
     if (parsedData.lineType === 'curve') {
         const numericElements = parsedData.elements.filter(function(element) { return element.type === 'number'; });
@@ -408,6 +423,17 @@ window.updateExistingLine = function (lineId, parsedData) {
     // і перемасштабовуємо _cachedEnd незалежно від того що ввів користувач у direction.
     // Це запобігає «прокручуванню» лінії при додаванні WI1 або зміні довжини.
     const lineToEdit = G.figureLines[idx];
+    const previousChimney = (lineToEdit.elements || []).find(function(element) {
+        return element.type === 'element' && String(element.value).replace(/^-/, '') === 'KO1';
+    });
+    const editedChimney = (parsedData.elements || []).find(function(element) {
+        return element.type === 'element' && String(element.value).replace(/^-/, '') === 'KO1';
+    });
+    if (previousChimney && editedChimney) {
+        editedChimney.fill = previousChimney.fill || '#ff0000';
+        editedChimney.ignoreArea = previousChimney.ignoreArea === true;
+        editedChimney.reverseReference = previousChimney.reverseReference === true;
+    }
     if (parsedData.direction === 'free' && !lineToEdit._cachedEnd && !lineToEdit.isClosing) {
         const fromPt = G.shapePoints.find(function(point) { return point.num === lineToEdit.from; });
         const toPt = G.shapePoints.find(function(point) { return point.num === lineToEdit.to; });

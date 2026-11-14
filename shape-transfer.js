@@ -146,6 +146,16 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
                 elItem._elKey = elKey;
                 elItem.lineFrom = lineData.from;
                 elItem.lineTo = lineData.to;
+                elItem.elStart = elements[i].value;
+                elItem.elEnd = elements[i + 1].value;
+                if (code === 'KO1') {
+                    if (typeof elements[i + 2].ignoreArea === 'boolean') {
+                        elItem.ignoreArea = elements[i + 2].ignoreArea;
+                    }
+                    if (typeof elements[i + 2].reverseReference === 'boolean') {
+                        elItem.reverseReference = elements[i + 2].reverseReference;
+                    }
+                }
             } else {
                 // Новий елемент ієрархії
                 const newId = G.hierarchyIdCounter++;
@@ -161,6 +171,16 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
                         elStart:  elements[i].value,
                         elEnd:    elements[i+1].value,
                         elSide:   side,
+                        elThickness: Number.isFinite(Number(elements[i+2].thickness))
+                            ? Number(elements[i+2].thickness) : (code === 'KO1' ? 0.4 : lineThickness),
+                        elOffset: Number.isFinite(Number(elements[i+2].offset))
+                            ? Number(elements[i+2].offset) : 0,
+                        elPlacement: code === 'KO1'
+                            ? (elements[i+2].placement || (elements[i+2].value.startsWith('-') ? 'outside' : 'inside'))
+                            : 'inside',
+                        elFill: elements[i+2].fill || '#ff0000',
+                        ignoreArea: elements[i+2].ignoreArea === true,
+                        reverseReference: elements[i+2].reverseReference === true,
                         lineFrom: lineData.from,
                         lineTo:   lineData.to,
                         svgGroup: elGroup,
@@ -172,22 +192,60 @@ window._drawElementsIntoGroups = function (lineData, x1, y1, x2, y2, scale, pare
                     elItem = newEl;
                 }
             }
+            if (elItem && code === 'KO1') {
+                elItem.elThickness = Number.isFinite(Number(elements[i + 2].thickness))
+                    ? Number(elements[i + 2].thickness) : (elItem.elThickness ?? 0.4);
+                elItem.elOffset = Number.isFinite(Number(elements[i + 2].offset))
+                    ? Number(elements[i + 2].offset) : (elItem.elOffset ?? 0);
+                elItem.elPlacement = elements[i + 2].placement ||
+                    (elements[i + 2].value.startsWith('-') ? 'outside' : (elItem.elPlacement || 'inside'));
+                elItem.elFill = elements[i + 2].fill || elItem.elFill || '#ff0000';
+                if (typeof elements[i + 2].ignoreArea === 'boolean') {
+                    elItem.ignoreArea = elements[i + 2].ignoreArea;
+                }
+                if (typeof elements[i + 2].reverseReference === 'boolean') {
+                    elItem.reverseReference = elements[i + 2].reverseReference;
+                }
+            }
 
             parentGroup.appendChild(elGroup);
 
-            if (code === 'WI1' || code === 'DV1' || code === 'OT1') {
+            if (code === 'WI1' || code === 'DV1' || code === 'OT1' || code === 'KO1') {
                 // Товщина: індивідуальна для елемента > загальна для лінії > константа
                 const elThickness = (elItem && elItem.elThickness != null)
                     ? elItem.elThickness
-                    : lineThickness;
+                    : (code === 'KO1' ? 0.4 : lineThickness);
+                const elementSide = code === 'KO1'
+                    ? _chimneyInteriorSide(G.shapePoints, G.figureLines, lineData, x1, y1, x2, y2) *
+                        (elItem && elItem.elPlacement === 'outside' ? -1 : 1)
+                    : side;
+                const options = code === 'KO1'
+                    ? {
+                        fill: elItem && elItem.elFill || '#ff0000',
+                        offset: (elItem && elItem.elOffset || 0) * scale
+                    }
+                    : undefined;
+                const elementLineLength = curve
+                    ? curve.arcLength / scale
+                    : Number(elements[i + 2].lineLength || lineData.length || len / scale);
+                const elementStart = code === 'KO1' && elItem && elItem.reverseReference
+                    ? elementLineLength - elements[i + 1].value
+                    : elements[i].value;
+                const elementEnd = code === 'KO1' && elItem && elItem.reverseReference
+                    ? elementLineLength - elements[i].value
+                    : elements[i + 1].value;
                 if (curve) {
-                    drawCurvedArchitecturalElement(elGroup, code, curve, start, end,
-                        elThickness * scale, side, true);
+                    drawCurvedArchitecturalElement(elGroup, code, curve,
+                        code === 'KO1' ? elementStart * scale : start,
+                        code === 'KO1' ? elementEnd * scale : end,
+                        elThickness * scale, elementSide, true, options);
                 } else {
-                    const sx = x1 + ux * start;
-                    const sy = y1 + uy * start;
+                    const elementStartPx = code === 'KO1' ? elementStart * scale : start;
+                    const elementEndPx = code === 'KO1' ? elementEnd * scale : end;
+                    const sx = x1 + ux * elementStartPx;
+                    const sy = y1 + uy * elementStartPx;
                     drawArchitecturalElement(elGroup, code, sx, sy, ux, uy, px, py,
-                        end - start, elThickness * scale, side, true);
+                        elementEndPx - elementStartPx, elThickness * scale, elementSide, true, options);
                 }
             }
 

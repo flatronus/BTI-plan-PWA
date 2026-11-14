@@ -27,6 +27,7 @@ window.initConstructsPanel = function () {
     body.appendChild(_makeWindowStrip());
     body.appendChild(_makeDoorStrip());
     body.appendChild(_makeOpeningStrip());
+    body.appendChild(_makeElementStrip('Комин 1', 'KO1', 'chimney'));
 };
 
 /** Будує drag-джерело полоски */
@@ -88,7 +89,7 @@ function _makeElementStrip(labelText, code, dragType) {
     wrap.style.cssText = [
         'display:flex;flex-direction:column;align-items:center;gap:4px;',
         'padding:8px 4px;margin-bottom:6px;',
-        'background:#fdf4ff;border:1px solid #e9d5ff;border-radius:6px;',
+        'background:' + (code === 'KO1' ? '#fff1f2' : '#fdf4ff') + ';border:1px solid ' + (code === 'KO1' ? '#fecaca' : '#e9d5ff') + ';border-radius:6px;',
         'cursor:grab;user-select:none;',
     ].join('');
     wrap.title = 'Перетягніть на будь-яку лінію фігури';
@@ -104,8 +105,8 @@ function _makeElementStrip(labelText, code, dragType) {
     windowShape.setAttribute('y', '12');
     windowShape.setAttribute('width', '78');
     windowShape.setAttribute('height', '12');
-    windowShape.setAttribute('fill', 'none');
-    windowShape.setAttribute('stroke', 'black');
+    windowShape.setAttribute('fill', code === 'KO1' ? '#ff0000' : 'none');
+    windowShape.setAttribute('stroke', code === 'KO1' ? '#ff0000' : 'black');
     preview.appendChild(windowShape);
 
     if (code === 'WI1') {
@@ -128,7 +129,7 @@ function _makeElementStrip(labelText, code, dragType) {
     wrap.appendChild(preview);
 
     const label = document.createElement('span');
-    label.style.cssText = 'font-size:11px;color:#7e22ce;font-weight:600;';
+    label.style.cssText = 'font-size:11px;color:' + (code === 'KO1' ? '#b91c1c' : '#7e22ce') + ';font-weight:600;';
     label.textContent = labelText;
     wrap.appendChild(label);
 
@@ -365,8 +366,9 @@ function _finishConstructDrop(clientX, clientY) {
 
     if (!_cTargetLine) return;  // Не потрапили на лінію — скасовуємо
 
-    if (_cDragType === 'window' || _cDragType === 'door' || _cDragType === 'opening') {
-        const code = _cDragType === 'window' ? 'WI1' : _cDragType === 'door' ? 'DV1' : 'OT1';
+    if (_cDragType === 'window' || _cDragType === 'door' || _cDragType === 'opening' || _cDragType === 'chimney') {
+        const code = _cDragType === 'window' ? 'WI1' : _cDragType === 'door' ? 'DV1' :
+            _cDragType === 'opening' ? 'OT1' : 'KO1';
         _placeLineElement(_cTargetLine, code);
     } else {
         _placeConstructStrip(_cTargetLine, _cThicknessM);
@@ -386,12 +388,37 @@ function _placeLineElement(lineInfo, code) {
         : (Number(lineData.length) > 0 ? Number(lineData.length) : pixelLength / SCALE);
     if (lineLength <= 0) return;
 
-    const elementLength = Math.min(code === 'WI1' ? WINDOW_LENGTH_M : DOOR_LENGTH_M, lineLength);
+    const elementLength = Math.min(code === 'WI1' ? WINDOW_LENGTH_M : code === 'KO1' ? 1 : DOOR_LENGTH_M, lineLength);
     const center = lineInfo.dropFraction * lineLength;
     const start = Math.max(0, Math.min(lineLength - elementLength, center - elementLength / 2));
     const end = start + elementLength;
 
     if (!Array.isArray(lineData.elements)) lineData.elements = [];
+    if (code === 'KO1') {
+        const element = {
+            type: 'element',
+            value: 'KO1',
+            thickness: 0.4,
+            offset: 0,
+            fill: '#ff0000',
+            placement: 'inside',
+            lineLength: Number(lineData.length) > 0 ? Number(lineData.length) : lineLength
+        };
+        lineData.elements.push(
+            { type: 'number', value: start },
+            { type: 'number', value: end },
+            element
+        );
+        lineData.code = _rebuildLineCode(lineData.elements, lineData.direction, lineData.lineType);
+        if (typeof calculateFigureArea === 'function') {
+            item.area = calculateFigureArea(item.figureLines, item.shapePoints).toFixed(1);
+        }
+        if (typeof _redrawItemSvgGroup === 'function') _redrawItemSvgGroup(item);
+        if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
+        if (typeof renderHierarchy === 'function') renderHierarchy();
+        showToast('Комин 1 додано до лінії', 'success');
+        return;
+    }
     let insertAt = lineData.elements.length;
     if (lineData.lineType === 'curve') {
         insertAt = Math.max(2, lineData.elements.length);
