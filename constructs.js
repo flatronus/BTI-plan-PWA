@@ -7,6 +7,7 @@
 const CONSTRUCT_THICKNESS_M = 0.2;
 const WINDOW_LENGTH_M = 1.2;
 const DOOR_LENGTH_M = 0.9;
+const CONSTRUCT_FIGURE_SIZE_M = 3;
 
 /** Ініціалізує панель Конструктиви */
 window.initConstructsPanel = function () {
@@ -16,7 +17,7 @@ window.initConstructsPanel = function () {
 
     const hint = document.createElement('div');
     hint.style.cssText = 'font-size:11px;color:#6b7280;padding:6px 4px 8px;';
-    hint.textContent = 'Перетягніть полоску на лінію фігури — вона автоматично вирівняється між двома точками.';
+    hint.textContent = 'Перетягніть фігуру на полотно, інші конструктиви — на лінію фігури.';
     body.appendChild(hint);
 
     // Полоска конструктиву 0.20 м
@@ -28,6 +29,7 @@ window.initConstructsPanel = function () {
     body.appendChild(_makeDoorStrip());
     body.appendChild(_makeOpeningStrip());
     body.appendChild(_makeElementStrip('Комин 1', 'KO1', 'chimney'));
+    body.appendChild(_makeFigureStrip());
 };
 
 /** Будує drag-джерело полоски */
@@ -147,6 +149,50 @@ function _makeElementStrip(labelText, code, dragType) {
     return wrap;
 }
 
+function _makeFigureStrip() {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = [
+        'display:flex;flex-direction:column;align-items:center;gap:4px;',
+        'padding:8px 4px;margin-bottom:6px;',
+        'background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;',
+        'cursor:grab;user-select:none;',
+    ].join('');
+    wrap.title = 'Перетягніть прямокутник на полотно';
+
+    const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    preview.setAttribute('width', '80');
+    preview.setAttribute('height', '36');
+    preview.setAttribute('viewBox', '0 0 80 36');
+    preview.style.border = '1px solid #d1d5db';
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '21');
+    rect.setAttribute('y', '5');
+    rect.setAttribute('width', '38');
+    rect.setAttribute('height', '26');
+    rect.setAttribute('fill', '#dbeafe');
+    rect.setAttribute('stroke', '#2563eb');
+    preview.appendChild(rect);
+    wrap.appendChild(preview);
+
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size:11px;color:#1d4ed8;font-weight:600;';
+    label.textContent = 'Фігура';
+    wrap.appendChild(label);
+
+    wrap.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        _startConstructDrag(e.clientX, e.clientY, CONSTRUCT_THICKNESS_M, 'figure');
+    });
+    wrap.addEventListener('touchstart', function(e) {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        _startConstructDrag(e.touches[0].clientX, e.touches[0].clientY, CONSTRUCT_THICKNESS_M, 'figure');
+    }, { passive: false });
+
+    return wrap;
+}
+
 /* ── Drag-стан ── */
 let _cDragging    = false;
 let _cThicknessM  = CONSTRUCT_THICKNESS_M;
@@ -167,11 +213,12 @@ function _startConstructDrag(clientX, clientY, thicknessM, dragType) {
 
     // Створюємо привид (overlay div — не SVG, щоб слідкувати за курсором)
     _cGhost = document.createElement('div');
+    const isFigure = _cDragType === 'figure';
     _cGhost.style.cssText = [
         'position:fixed;pointer-events:none;z-index:9000;',
-        'width:60px;height:8px;',
-        'background:rgba(125,211,252,0.6);',
-        'border:1px solid #38bdf8;border-radius:2px;',
+        'width:60px;height:' + (isFigure ? '60px' : '8px') + ';',
+        'background:' + (isFigure ? 'rgba(37,99,235,0.18)' : 'rgba(125,211,252,0.6)') + ';',
+        'border:1px solid ' + (isFigure ? '#2563eb' : '#38bdf8') + ';border-radius:2px;',
         'transform:translate(-50%,-50%);',
     ].join('');
     document.body.appendChild(_cGhost);
@@ -228,7 +275,6 @@ function _screenToSvg(clientX, clientY) {
  */
 function _detectSnapLine(clientX, clientY) {
     if (!_cActiveSvg) return;
-
     const svgPt = _screenToSvg(clientX, clientY);
     if (!svgPt) return;
 
@@ -241,8 +287,12 @@ function _detectSnapLine(clientX, clientY) {
     allItems.forEach(function(item) {
         if (!item.figureLines || !item.shapePoints || !item.svgGroup) return;
 
-        const offsetX = item._offsetX || 0;
-        const offsetY = item._offsetY || 0;
+        const offsetX = item._anchorOnCanvas
+            ? item._anchorOnCanvas.x - START_X
+            : (item._offsetX || 0);
+        const offsetY = item._anchorOnCanvas
+            ? item._anchorOnCanvas.y - START_Y
+            : (item._offsetY || 0);
         // Отримуємо CTM групи → SVG
         let groupCTM = null;
         try {
@@ -364,6 +414,13 @@ function _finishConstructDrop(clientX, clientY) {
     document.removeEventListener('touchmove', _onConstructTouchMove);
     document.removeEventListener('touchend',  _onConstructTouchEnd);
 
+    if (_cDragType === 'figure') {
+        if (_cTargetLine) _placeBoundFigure(_cTargetLine);
+        else _placeConstructFigure(clientX, clientY);
+        _cTargetLine = null;
+        return;
+    }
+
     if (!_cTargetLine) return;  // Не потрапили на лінію — скасовуємо
 
     if (_cDragType === 'window' || _cDragType === 'door' || _cDragType === 'opening' || _cDragType === 'chimney') {
@@ -374,6 +431,152 @@ function _finishConstructDrop(clientX, clientY) {
         _placeConstructStrip(_cTargetLine, _cThicknessM);
     }
     _cTargetLine = null;
+}
+
+function _placeConstructFigure(clientX, clientY) {
+    if (!_cActiveSvg) return;
+    const bounds = _cActiveSvg.getBoundingClientRect();
+    if (clientX < bounds.left || clientX > bounds.right ||
+        clientY < bounds.top || clientY > bounds.bottom) return;
+
+    const center = _screenToSvg(clientX, clientY);
+    if (!center) return;
+
+    const width = CONSTRUCT_FIGURE_SIZE_M;
+    const height = CONSTRUCT_FIGURE_SIZE_M;
+    const halfWidth = width * SCALE / 2;
+    const halfHeight = height * SCALE / 2;
+    const points = [
+        { x: center.x - halfWidth, y: center.y - halfHeight, num: 1 },
+        { x: center.x + halfWidth, y: center.y - halfHeight, num: 2 },
+        { x: center.x + halfWidth, y: center.y + halfHeight, num: 3 },
+        { x: center.x - halfWidth, y: center.y + halfHeight, num: 4 }
+    ];
+    const lengths = [width, height, width, height];
+    const lines = lengths.map(function(length, index) {
+        const from = index + 1;
+        const to = index === 3 ? 1 : index + 2;
+        return {
+            id: index + 1,
+            from,
+            to,
+            direction: 'right',
+            lineType: 'line',
+            elements: [{ type: 'number', value: length }],
+            code: 'right\nline\n' + length.toFixed(2),
+            length,
+            isClosing: index === 3,
+            isDiagonal: false,
+            dimensionVisible: true,
+            dimensionRotated: false
+        };
+    });
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    _cActiveSvg.appendChild(group);
+
+    const item = addToHierarchy({
+        name: 'Фігура',
+        area: (width * height).toFixed(1),
+        figureLines: lines,
+        shapePoints: points,
+        svgGroup: group,
+        constructFigure: true,
+        constructWidth: width,
+        constructHeight: height
+    });
+    group.setAttribute('data-hierarchy-id', item.id);
+    item._offsetX = 0;
+    item._offsetY = 0;
+    _redrawItemSvgGroup(item);
+    _syncHierarchyToCanvas();
+    selectHierarchyItem(item);
+    showToast('Фігуру додано на полотно', 'success');
+}
+
+function _placeBoundFigure(lineInfo) {
+    const parentItem = lineInfo.item;
+    const hostLine = lineInfo.lineData;
+    if (!parentItem || !hostLine || typeof _buildLineBoundFigureGeometry !== 'function') return;
+
+    const lineLength = _getLineBoundFigureLength(parentItem, hostLine.id);
+    if (!Number.isFinite(lineLength) || lineLength <= 0) {
+        showToast('Не вдалося визначити довжину лінії прив’язки', 'error');
+        return;
+    }
+
+    const width = Math.min(CONSTRUCT_FIGURE_SIZE_M, lineLength);
+    const center = Math.max(0, Math.min(1, lineInfo.dropFraction || 0.5)) * lineLength;
+    const start = Math.max(0, Math.min(lineLength - width, center - width / 2));
+    const binding = {
+        hostLineId: hostLine.id,
+        start,
+        end: start + width,
+        offset: 0,
+        side: _getBoundFigureSide(lineInfo)
+    };
+    const height = CONSTRUCT_FIGURE_SIZE_M;
+    const geometry = _buildLineBoundFigureGeometry(parentItem, binding, height);
+    if (!geometry) {
+        showToast('Не вдалося створити прив’язану фігуру', 'error');
+        return;
+    }
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    if (geometry.transform) group.setAttribute('transform', geometry.transform);
+    _cActiveSvg.appendChild(group);
+
+    const item = addToHierarchy({
+        name: 'Фігура',
+        area: (geometry.width * geometry.height).toFixed(1),
+        figureLines: geometry.lines,
+        shapePoints: geometry.points,
+        svgGroup: group,
+        parentId: parentItem.id,
+        constructFigure: true,
+        constructWidth: geometry.width,
+        constructHeight: geometry.height
+    });
+    item._figureBinding = binding;
+    item._offsetX = 0;
+    item._offsetY = 0;
+    group.setAttribute('data-hierarchy-id', item.id);
+    _redrawItemSvgGroup(item);
+    _syncHierarchyToCanvas();
+    selectHierarchyItem(item);
+    showToast('Фігуру прив’язано до лінії', 'success');
+}
+
+function _getBoundFigureSide(lineInfo) {
+    let normal;
+    let anchor;
+    if (lineInfo.curve) {
+        const point = lineInfo.curve.pointAtDistance(
+            lineInfo.curve.arcLength * Math.max(0, Math.min(1, lineInfo.dropFraction || 0.5))
+        );
+        normal = { x: point.px, y: point.py };
+        anchor = point;
+    } else {
+        const dx = lineInfo.x2 - lineInfo.x1;
+        const dy = lineInfo.y2 - lineInfo.y1;
+        const length = Math.hypot(dx, dy) || 1;
+        normal = { x: dy / length, y: -dx / length };
+        const fraction = Math.max(0, Math.min(1, lineInfo.dropFraction || 0.5));
+        anchor = {
+            x: lineInfo.x1 + dx * fraction,
+            y: lineInfo.y1 + dy * fraction
+        };
+    }
+
+    const distance = (lineInfo.dropX - anchor.x) * normal.x +
+        (lineInfo.dropY - anchor.y) * normal.y;
+    if (Math.abs(distance) > 2) return distance > 0 ? 1 : -1;
+
+    const points = (lineInfo.item.shapePoints || []).filter(function(point) { return !point.isTemp; });
+    const area = points.reduce(function(sum, point, index) {
+        const next = points[(index + 1) % points.length];
+        return sum + point.x * next.y - next.x * point.y;
+    }, 0);
+    return area >= 0 ? -1 : 1;
 }
 
 /** Додає елемент до даних лінії та перемальовує фігуру */

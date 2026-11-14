@@ -327,6 +327,20 @@ window.transferFigureToMainCanvas = function () {
                 useOffsetY = offsetY;
             }
 
+            if (existingItem.constructFigure) {
+                G.figureLines.forEach(function(lineData, index) {
+                    const previousLine = existingItem.figureLines.find(function(previous) {
+                        return previous.id === lineData.id;
+                    }) || existingItem.figureLines[index];
+                    if (!previousLine) return;
+                    if (typeof previousLine.dimensionVisible === 'boolean') {
+                        lineData.dimensionVisible = previousLine.dimensionVisible;
+                    }
+                    if (typeof previousLine.dimensionRotated === 'boolean') {
+                        lineData.dimensionRotated = previousLine.dimensionRotated;
+                    }
+                });
+            }
             _rebuildSvgGroup(existingItem.svgGroup, useOffsetX, useOffsetY, existingItem);
 
             existingItem.figureLines = JSON.parse(JSON.stringify(G.figureLines));
@@ -334,6 +348,34 @@ window.transferFigureToMainCanvas = function () {
             existingItem.roomNumber  = G.roomNumber;
             existingItem.type        = G.isBuilding ? 'building' : 'room';
             existingItem.area        = appState.customArea || appState.calculatedArea;
+            if (existingItem.constructFigure) {
+                const points = existingItem.shapePoints.filter(function(point) { return !point.isTemp; });
+                if (points.length === 4) {
+                    const vectors = points.map(function(point, index) {
+                        const next = points[(index + 1) % points.length];
+                        return { x: next.x - point.x, y: next.y - point.y };
+                    });
+                    const lengths = vectors.map(function(vector) {
+                        return Math.hypot(vector.x, vector.y);
+                    });
+                    const cornersAreRight = vectors.every(function(vector, index) {
+                        const next = vectors[(index + 1) % vectors.length];
+                        return Math.abs(vector.x * next.x + vector.y * next.y) <=
+                            lengths[index] * lengths[(index + 1) % lengths.length] * 0.001;
+                    });
+                    const oppositeSidesMatch =
+                        Math.abs(lengths[0] - lengths[2]) <= 0.01 * SCALE &&
+                        Math.abs(lengths[1] - lengths[3]) <= 0.01 * SCALE;
+                    if (cornersAreRight && oppositeSidesMatch) {
+                        existingItem.constructWidth = lengths[0] / SCALE;
+                        existingItem.constructHeight = lengths[1] / SCALE;
+                    } else {
+                        existingItem.constructFigure = false;
+                    }
+                } else {
+                    existingItem.constructFigure = false;
+                }
+            }
             // Оновлюємо збережений offset (міг бути null для старих елементів)
             if (!existingItem._anchorOnCanvas) {
                 existingItem._offsetX = useOffsetX;
@@ -432,6 +474,228 @@ window._computeAnchorOnCanvas = function (anchorDef, parentItem, offsetX, offset
     };
 };
 
+function _getLineBoundFigureContext(parentItem, hostLineId) {
+    const hostLine = (parentItem.figureLines || []).find(function(line) {
+        return line.id === hostLineId;
+    });
+    if (!hostLine) return null;
+
+    const points = (parentItem.shapePoints || []).filter(function(point) { return !point.isTemp; });
+    const fromPoint = points.find(function(point) { return point.num === hostLine.from; });
+    const toPoint = hostLine.isClosing
+        ? points[0]
+        : points.find(function(point) { return point.num === hostLine.to; });
+    if (!fromPoint || !toPoint) return null;
+
+    const offsetX = parentItem._anchorOnCanvas
+        ? parentItem._anchorOnCanvas.x - START_X
+        : (parentItem._offsetX || 0);
+    const offsetY = parentItem._anchorOnCanvas
+        ? parentItem._anchorOnCanvas.y - START_Y
+        : (parentItem._offsetY || 0);
+    const x1 = fromPoint.x + offsetX;
+    const y1 = fromPoint.y + offsetY;
+    const x2 = toPoint.x + offsetX;
+    const y2 = toPoint.y + offsetY;
+    const curveShapePoints = points.map(function(point) {
+        return { x: point.x + offsetX, y: point.y + offsetY };
+    });
+    const curveHeight = hostLine.lineType === 'curve'
+        ? _getLineCurveHeight(hostLine)
+        : null;
+    const curve = curveHeight !== null
+        ? _getSvgCurveGeometry(x1, y1, x2, y2, curveHeight * SCALE, curveShapePoints)
+        : null;
+    const chordLength = Math.hypot(x2 - x1, y2 - y1);
+    const length = curve ? curve.arcLength : chordLength;
+
+    return {
+        hostLine,
+        fromPoint,
+        toPoint,
+        x1,
+        y1,
+        x2,
+        y2,
+        curve,
+        length,
+        transform: parentItem.svgGroup?.getAttribute('transform') || ''
+    };
+}
+
+window._getLineBoundFigureLength = function (parentItem, hostLineId) {
+    const context = _getLineBoundFigureContext(parentItem, hostLineId);
+    return context ? context.length / SCALE : 0;
+};
+
+function _makeBoundFigureLine(id, from, to, length, curveHeight, chordLength, closing) {
+    const isCurve = curveHeight !== null;
+    const elements = isCurve
+        ? [{ type: 'number', value: chordLength }, { type: 'number', value: curveHeight }]
+        : [{ type: 'number', value: length }];
+    return {
+        id,
+        from,
+        to,
+        direction: isCurve ? 'free' : 'right',
+        lineType: isCurve ? 'curve' : 'line',
+        elements,
+        code: isCurve
+            ? 'free\ncurve\n' + chordLength.toFixed(3) + '\n' + curveHeight.toFixed(3)
+            : 'right\nline\n' + length.toFixed(3),
+        length,
+        isClosing: closing,
+        isDiagonal: false,
+        dimensionVisible: true,
+        dimensionRotated: false
+    };
+}
+
+window._buildLineBoundFigureGeometry = function (parentItem, binding, height) {
+    const context = _getLineBoundFigureContext(parentItem, binding.hostLineId);
+    if (!context || context.length <= 0) return null;
+
+    const totalLength = context.length / SCALE;
+    const width = Math.max(0, Math.min(totalLength, Number(binding.end) - Number(binding.start)));
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return null;
+
+    const start = Math.max(0, Math.min(Number(binding.start) || 0, totalLength - width));
+    const end = start + width;
+    binding.start = start;
+    binding.end = end;
+    binding.offset = Math.max(0, Number(binding.offset) || 0);
+    binding.side = binding.side === -1 ? -1 : 1;
+
+    const side = binding.side;
+    const offsetPx = binding.offset * SCALE;
+    const heightPx = height * SCALE;
+    let baseStart, baseEnd, outerEnd, outerStart, baseMid, outerMid;
+
+    if (context.curve) {
+        const startDistance = start * SCALE;
+        const endDistance = end * SCALE;
+        const middle = context.curve.pointAtDistance((startDistance + endDistance) / 2);
+        function offsetPoint(distance, amount) {
+            const point = context.curve.pointAtDistance(distance);
+            return {
+                x: point.x + point.px * amount * side,
+                y: point.y + point.py * amount * side
+            };
+        };
+        baseStart = offsetPoint(startDistance, offsetPx);
+        baseEnd = offsetPoint(endDistance, offsetPx);
+        outerEnd = offsetPoint(endDistance, offsetPx + heightPx);
+        outerStart = offsetPoint(startDistance, offsetPx + heightPx);
+        baseMid = {
+            x: middle.x + middle.px * offsetPx * side,
+            y: middle.y + middle.py * offsetPx * side
+        };
+        outerMid = {
+            x: middle.x + middle.px * (offsetPx + heightPx) * side,
+            y: middle.y + middle.py * (offsetPx + heightPx) * side
+        };
+    } else {
+        const dx = context.x2 - context.x1;
+        const dy = context.y2 - context.y1;
+        const lineLength = Math.hypot(dx, dy);
+        if (lineLength <= 0) return null;
+        const ux = dx / lineLength;
+        const uy = dy / lineLength;
+        const px = uy;
+        const py = -ux;
+        function pointAt(distance, amount) {
+            return {
+                x: context.x1 + ux * distance * SCALE + px * amount * side,
+                y: context.y1 + uy * distance * SCALE + py * amount * side
+            };
+        }
+        baseStart = pointAt(start, offsetPx);
+        baseEnd = pointAt(end, offsetPx);
+        outerEnd = pointAt(end, offsetPx + heightPx);
+        outerStart = pointAt(start, offsetPx + heightPx);
+    }
+
+    const points = [baseStart, baseEnd, outerEnd, outerStart].map(function(point, index) {
+        return { x: point.x, y: point.y, num: index + 1 };
+    });
+    const areaTwice = points.reduce(function(area, point, index) {
+        const next = points[(index + 1) % points.length];
+        return area + point.x * next.y - next.x * point.y;
+    }, 0);
+    const outsideSign = areaTwice >= 0 ? -1 : 1;
+
+    function curveHeightFor(startPoint, endPoint, middlePoint) {
+        const dx = endPoint.x - startPoint.x;
+        const dy = endPoint.y - startPoint.y;
+        const chord = Math.hypot(dx, dy);
+        if (chord <= 0) return 0;
+        const sagitta = ((middlePoint.x - (startPoint.x + endPoint.x) / 2) * -dy +
+            (middlePoint.y - (startPoint.y + endPoint.y) / 2) * dx) / chord;
+        return sagitta / outsideSign / SCALE;
+    }
+
+    let baseCurveHeight = null;
+    let outerCurveHeight = null;
+    let baseChordLength = 0;
+    let outerChordLength = 0;
+    if (context.curve) {
+        baseCurveHeight = curveHeightFor(baseStart, baseEnd, baseMid);
+        outerCurveHeight = curveHeightFor(outerEnd, outerStart, outerMid);
+        baseChordLength = Math.hypot(baseEnd.x - baseStart.x, baseEnd.y - baseStart.y) / SCALE;
+        outerChordLength = Math.hypot(outerStart.x - outerEnd.x, outerStart.y - outerEnd.y) / SCALE;
+    }
+
+    const lines = [
+        _makeBoundFigureLine(1, 1, 2, width, baseCurveHeight, baseChordLength, false),
+        _makeBoundFigureLine(2, 2, 3, height, null, 0, false),
+        _makeBoundFigureLine(3, 3, 4, width, outerCurveHeight, outerChordLength, false),
+        _makeBoundFigureLine(4, 4, 1, height, null, 0, true)
+    ];
+
+    return { points, lines, width, height, transform: context.transform };
+}
+
+window._refreshLineBoundFigure = function (childItem, parentItem) {
+    const geometry = window._buildLineBoundFigureGeometry(
+        parentItem,
+        childItem._figureBinding,
+        Number(childItem.constructHeight)
+    );
+    if (!geometry) return false;
+
+    childItem.shapePoints = geometry.points;
+    childItem.figureLines = geometry.lines;
+    childItem.constructWidth = geometry.width;
+    childItem.constructHeight = geometry.height;
+    childItem._offsetX = 0;
+    childItem._offsetY = 0;
+    childItem.area = typeof calculateFigureArea === 'function'
+        ? calculateFigureArea(geometry.lines, geometry.points).toFixed(1)
+        : (geometry.width * geometry.height).toFixed(1);
+
+    if (childItem.svgGroup) {
+        if (geometry.transform) childItem.svgGroup.setAttribute('transform', geometry.transform);
+        else childItem.svgGroup.removeAttribute('transform');
+        const savedLines = G.figureLines;
+        const savedPoints = G.shapePoints;
+        const savedRoom = G.roomNumber;
+        const savedBuilding = G.isBuilding;
+        const savedDimensionsOutside = G.dimensionsOutside;
+        G.figureLines = JSON.parse(JSON.stringify(geometry.lines));
+        G.shapePoints = JSON.parse(JSON.stringify(geometry.points));
+        G.roomNumber = childItem.roomNumber || '';
+        G.isBuilding = childItem.type === 'building';
+        G.dimensionsOutside = childItem.dimensionsOutside === true;
+        _rebuildSvgGroup(childItem.svgGroup, 0, 0, childItem);
+        G.figureLines = savedLines;
+        G.shapePoints = savedPoints;
+        G.roomNumber = savedRoom;
+        G.isBuilding = savedBuilding;
+        G.dimensionsOutside = savedDimensionsOutside;
+    }
+    return true;
+};
+
 /**
  * Рекурсивно перераховує _anchorOnCanvas для всіх дочірніх кімнат
  * після того як батьківська фігура була переміщена/перемальована.
@@ -442,6 +706,13 @@ window._refreshChildAnchors = function (parentItem, parentOffsetX, parentOffsetY
     const mainSvg = canvas ? document.querySelector(`[data-canvas-id="${canvas.id}"] svg`) : null;
 
     (parentItem.children || []).forEach(child => {
+        if (child._figureBinding) {
+            if (window._refreshLineBoundFigure(child, parentItem)) {
+                _refreshChildAnchors(child, child._offsetX || 0, child._offsetY || 0);
+            }
+            return;
+        }
+
         if (!child._anchorDef) {
             // Немає anchorDef — але є свої діти, рекурсуємо з поточним offsetX/Y дитини
             if (child.children && child.children.length > 0 && child.svgGroup) {

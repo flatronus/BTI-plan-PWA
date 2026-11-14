@@ -62,6 +62,9 @@ window.addToHierarchy = function (shapeData) {
         figureLines: JSON.parse(JSON.stringify(shapeData.figureLines)),
         shapePoints: JSON.parse(JSON.stringify(shapeData.shapePoints)),
         svgGroup:   shapeData.svgGroup,
+        constructFigure: shapeData.constructFigure === true,
+        constructWidth: shapeData.constructWidth,
+        constructHeight: shapeData.constructHeight,
         children:   [],
         expanded:   true,
         parentId:   shapeData.parentId || null
@@ -305,6 +308,31 @@ function _propGet(item, key) {
     if (key === 'elOffset') return item.elOffset ?? 0;
     if (key === 'elPlacement') return item.elPlacement || 'inside';
     if (key === 'elFill') return item.elFill || '#ff0000';
+    if (key === 'figureBindingLine') {
+        const parent = _findParentItemById(item.id);
+        const line = parent && (parent.figureLines || []).find(function(lineData) {
+            return lineData.id === item._figureBinding?.hostLineId;
+        });
+        if (!line) return '—';
+        const to = line.to ?? (line.isClosing ? parent.shapePoints?.[0]?.num : '?');
+        return line.from + '-' + to;
+    }
+    if (key === 'figureBindingStart') return item._figureBinding?.start ?? 0;
+    if (key === 'figureBindingEnd') return item._figureBinding?.end ?? 0;
+    if (key === 'figureBindingOffset') return item._figureBinding?.offset ?? 0;
+    if (key === 'constructWidth' && item._figureBinding) {
+        return Number(item._figureBinding.end) - Number(item._figureBinding.start);
+    }
+    if (key === 'constructWidth') return item.constructWidth ?? 3;
+    if (key === 'constructHeight') return item.constructHeight ?? 3;
+    const sideDimension = key.match(/^constructLine(\d+)(Visible|Rotated)$/);
+    if (sideDimension) {
+        const line = (item.figureLines || []).find(function(lineData) {
+            return lineData.id === Number(sideDimension[1]);
+        });
+        if (sideDimension[2] === 'Visible') return !line || line.dimensionVisible !== false;
+        return !!(line && line.dimensionRotated);
+    }
     if (key === 'elArea') {
         const area = Math.max(0, Number(item.elEnd || 0) - Number(item.elStart || 0)) *
             Number(item.elThickness ?? 0.4);
@@ -332,12 +360,144 @@ function _propGet(item, key) {
     return item[key] ?? '';
 }
 
+function _getItemOutlineOnCanvas(item, svg) {
+    const points = (item.shapePoints || []).filter(function(point) { return !point.isTemp; });
+    if (points.length < 3 || !item.svgGroup || !svg) return [];
+
+    let groupMatrix;
+    try {
+        const svgMatrix = svg.getScreenCTM();
+        const screenMatrix = item.svgGroup.getScreenCTM();
+        if (!svgMatrix || !screenMatrix) return [];
+        groupMatrix = svgMatrix.inverse().multiply(screenMatrix);
+    } catch (error) {
+        return [];
+    }
+
+    const offsetX = item._anchorOnCanvas
+        ? item._anchorOnCanvas.x - START_X
+        : (item._offsetX || 0);
+    const offsetY = item._anchorOnCanvas
+        ? item._anchorOnCanvas.y - START_Y
+        : (item._offsetY || 0);
+    const lines = item.figureLines || [];
+    const outline = [];
+
+    function toCanvas(point) {
+        const svgPoint = svg.createSVGPoint();
+        svgPoint.x = point.x + offsetX;
+        svgPoint.y = point.y + offsetY;
+        const transformed = svgPoint.matrixTransform(groupMatrix);
+        return { x: transformed.x, y: transformed.y };
+    }
+
+    points.forEach(function(fromPoint, index) {
+        const toPoint = points[(index + 1) % points.length];
+        const line = lines.find(function(lineData) {
+            return !lineData.isDiagonal && lineData.from === fromPoint.num &&
+                (lineData.to === toPoint.num || lineData.isClosing);
+        });
+        let curve = null;
+        if (line && line.lineType === 'curve' && typeof _getLineCurveHeight === 'function') {
+            const height = _getLineCurveHeight(line);
+            if (height !== null) {
+                curve = _getSvgCurveGeometry(
+                    fromPoint.x, fromPoint.y, toPoint.x, toPoint.y,
+                    height * SCALE, points
+                );
+            }
+        }
+
+        const steps = curve ? Math.max(12, Math.ceil(Math.abs(curve.deltaAngle) * 24)) : 8;
+        for (let step = 0; step < steps; step++) {
+            const progress = step / steps;
+            const point = curve
+                ? curve.pointAtDistance(curve.arcLength * progress)
+                : {
+                    x: fromPoint.x + (toPoint.x - fromPoint.x) * progress,
+                    y: fromPoint.y + (toPoint.y - fromPoint.y) * progress
+                };
+            outline.push(toCanvas(point));
+        }
+    });
+
+    return outline;
+}
+
+function _isPointInPolygon(point, polygon) {
+    let inside = false;
+    for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+        const a = polygon[previous];
+        const b = polygon[index];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const lengthSquared = dx * dx + dy * dy;
+        const projection = lengthSquared
+            ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared))
+            : 0;
+        const nearestX = a.x + projection * dx;
+        const nearestY = a.y + projection * dy;
+        if (Math.hypot(point.x - nearestX, point.y - nearestY) <= 0.5) return true;
+
+        if ((a.y > point.y) !== (b.y > point.y) &&
+            point.x < (dx * (point.y - a.y)) / dy + a.x) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+function _attachContainedFiguresToBuilding(buildingItem) {
+    const canvas = window.canvasManager?.canvases.find(
+        function(currentCanvas) { return currentCanvas.id === window.canvasManager?.activeCanvasId; }
+    );
+    const svg = canvas
+        ? document.querySelector(`[data-canvas-id="${canvas.id}"] svg`)
+        : null;
+    if (!svg) return;
+
+    const buildingOutline = _getItemOutlineOnCanvas(buildingItem, svg);
+    if (buildingOutline.length < 3) return;
+
+    const candidates = G.hierarchyData.filter(function(candidate) {
+        return candidate !== buildingItem &&
+            (candidate.type === 'room' || candidate.type === 'contour') &&
+            !candidate.parentId;
+    });
+
+    candidates.forEach(function(candidate) {
+        const candidateOutline = _getItemOutlineOnCanvas(candidate, svg);
+        if (candidateOutline.length < 3 ||
+            !candidateOutline.every(function(point) {
+                return _isPointInPolygon(point, buildingOutline);
+            })) {
+            return;
+        }
+
+        const rootIndex = G.hierarchyData.indexOf(candidate);
+        if (rootIndex !== -1) G.hierarchyData.splice(rootIndex, 1);
+        candidate.parentId = buildingItem.id;
+        if (!buildingItem.children) buildingItem.children = [];
+        buildingItem.children.push(candidate);
+    });
+}
+
 /** Записує значення властивості в item і застосовує побічні ефекти */
 function _propSet(item, key, value) {
     if (key === 'type') {
         item.type = value;
+        if (value === 'building') _attachContainedFiguresToBuilding(item);
+        _syncHierarchyToCanvas();
         renderHierarchy();
         renderProperties(item);
+        return;
+    }
+    if (item._figureBinding && (
+        key === 'figureBindingStart' || key === 'figureBindingEnd' ||
+        key === 'figureBindingOffset' || key === 'constructWidth' ||
+        key === 'constructHeight'
+    )) {
+        _setLineBoundFigureProperty(item, key, value);
         return;
     }
     if (key === 'visible') {
@@ -382,6 +542,33 @@ function _propSet(item, key, value) {
         _redrawItemSvgGroup(item);
         return;
     }
+    if (item.constructFigure && (key === 'constructWidth' || key === 'constructHeight')) {
+        const dimension = parseFloat(String(value).replace(',', '.'));
+        if (!Number.isFinite(dimension) || dimension <= 0) {
+            showToast('Розмір фігури має бути більшим за 0', 'warning');
+            renderProperties(item);
+            return;
+        }
+        item[key] = dimension;
+        _resizeConstructFigure(item);
+        return;
+    }
+    const sideDimension = key.match(/^constructLine(\d+)(Visible|Rotated)$/);
+    if (item.constructFigure && sideDimension) {
+        const line = (item.figureLines || []).find(function(lineData) {
+            return lineData.id === Number(sideDimension[1]);
+        });
+        if (!line) {
+            showToast('Не знайдено сторону фігури', 'error');
+            return;
+        }
+        if (sideDimension[2] === 'Visible') line.dimensionVisible = value;
+        else line.dimensionRotated = value;
+        _redrawItemSvgGroup(item);
+        _syncHierarchyToCanvas();
+        renderProperties(item);
+        return;
+    }
     if (key === 'elStart' || key === 'elEnd' || key === 'elLength' ||
         key === 'elSide' || key === '_thickness' || key === 'elOffset' ||
         key === 'elPlacement' || key === 'elFill' || key === 'ignoreArea' ||
@@ -408,6 +595,136 @@ function _propSet(item, key, value) {
         return;
     }
     item[key] = value;
+}
+
+function _setLineBoundFigureProperty(item, key, value) {
+    const parent = _findParentItemById(item.id);
+    if (!parent || typeof _getLineBoundFigureLength !== 'function' ||
+        typeof _refreshLineBoundFigure !== 'function') {
+        showToast('Не знайдено батьківську фігуру для прив’язки', 'error');
+        return;
+    }
+
+    const number = parseFloat(String(value).replace(',', '.'));
+    const binding = Object.assign({}, item._figureBinding);
+    const totalLength = _getLineBoundFigureLength(parent, binding.hostLineId);
+    if (!Number.isFinite(number) || !Number.isFinite(totalLength) || totalLength <= 0) {
+        showToast('Некоректне значення прив’язки', 'warning');
+        renderProperties(item);
+        return;
+    }
+
+    if (key === 'figureBindingStart') {
+        if (number < 0 || number >= Number(binding.end)) {
+            showToast('Початок має бути меншим за кінець прив’язки', 'warning');
+            renderProperties(item);
+            return;
+        }
+        binding.start = number;
+    } else if (key === 'figureBindingEnd') {
+        if (number <= Number(binding.start) || number > totalLength) {
+            showToast('Кінець має бути більшим за початок і не виходити за межі лінії', 'warning');
+            renderProperties(item);
+            return;
+        }
+        binding.end = number;
+    } else if (key === 'figureBindingOffset') {
+        if (number < 0) {
+            showToast('Відступ не може бути від’ємним', 'warning');
+            renderProperties(item);
+            return;
+        }
+        binding.offset = number;
+    } else if (key === 'constructWidth') {
+        if (number <= 0 || Number(binding.start) + number > totalLength) {
+            showToast('Ширина має бути більшою за 0 і поміщатися на лінії', 'warning');
+            renderProperties(item);
+            return;
+        }
+        binding.end = Number(binding.start) + number;
+    } else if (key === 'constructHeight') {
+        if (number <= 0) {
+            showToast('Висота має бути більшою за 0', 'warning');
+            renderProperties(item);
+            return;
+        }
+        item.constructHeight = number;
+    }
+
+    item._figureBinding = binding;
+    item.constructWidth = Number(binding.end) - Number(binding.start);
+    if (!_refreshLineBoundFigure(item, parent)) {
+        showToast('Не вдалося оновити прив’язану фігуру', 'error');
+        renderProperties(item);
+        return;
+    }
+    _syncHierarchyToCanvas();
+    renderHierarchy();
+    renderProperties(item);
+}
+
+function _resizeConstructFigure(item) {
+    const points = item.shapePoints || [];
+    if (points.length !== 4 || (item.figureLines || []).length !== 4) {
+        showToast('Редагування розмірів доступне лише для прямокутної фігури', 'error');
+        return;
+    }
+    const centerX = points.reduce(function(sum, point) { return sum + point.x; }, 0) / points.length;
+    const centerY = points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length;
+    const width = Number(item.constructWidth);
+    const height = Number(item.constructHeight);
+    const halfWidth = width * SCALE / 2;
+    const halfHeight = height * SCALE / 2;
+    item.shapePoints = [
+        { x: centerX - halfWidth, y: centerY - halfHeight, num: 1 },
+        { x: centerX + halfWidth, y: centerY - halfHeight, num: 2 },
+        { x: centerX + halfWidth, y: centerY + halfHeight, num: 3 },
+        { x: centerX - halfWidth, y: centerY + halfHeight, num: 4 }
+    ];
+    const lengths = [width, height, width, height];
+    item.figureLines.forEach(function(lineData, index) {
+        const length = lengths[index];
+        lineData.length = length;
+        const elements = lineData.elements || (lineData.elements = []);
+        for (let elementIndex = 0; elementIndex < elements.length - 2; elementIndex++) {
+            if (elements[elementIndex]?.type !== 'number' ||
+                elements[elementIndex + 1]?.type !== 'number' ||
+                elements[elementIndex + 2]?.type !== 'element') continue;
+            const elementLength = Math.min(
+                length,
+                Math.max(0, elements[elementIndex + 1].value - elements[elementIndex].value)
+            );
+            const elementStart = Math.min(elements[elementIndex].value, length - elementLength);
+            elements[elementIndex].value = elementStart;
+            elements[elementIndex + 1].value = elementStart + elementLength;
+            if (String(elements[elementIndex + 2].value).replace(/^-/, '') === 'KO1') {
+                elements[elementIndex + 2].lineLength = length;
+            }
+            elementIndex += 2;
+        }
+        let lengthElement = null;
+        for (let elementIndex = elements.length - 1; elementIndex >= 0; elementIndex--) {
+            if (elements[elementIndex].type === 'number') {
+                lengthElement = elements[elementIndex];
+                break;
+            }
+        }
+        if (lengthElement) lengthElement.value = length;
+        else elements.push({ type: 'number', value: length });
+        lineData.code = typeof _rebuildLineCode === 'function'
+            ? _rebuildLineCode(elements, lineData.direction, lineData.lineType)
+            : lineData.direction + '\n' + lineData.lineType + '\n' + length.toFixed(2);
+    });
+    item.area = typeof calculateFigureArea === 'function'
+        ? calculateFigureArea(item.figureLines, item.shapePoints).toFixed(1)
+        : (width * height).toFixed(1);
+    const offsetX = item._anchorOnCanvas ? item._anchorOnCanvas.x - START_X : (item._offsetX || 0);
+    const offsetY = item._anchorOnCanvas ? item._anchorOnCanvas.y - START_Y : (item._offsetY || 0);
+    _redrawItemSvgGroup(item);
+    if (typeof _refreshChildAnchors === 'function') _refreshChildAnchors(item, offsetX, offsetY);
+    _syncHierarchyToCanvas();
+    renderHierarchy();
+    renderProperties(item);
 }
 
 /** Перемальовує SVG-групу item зі збереженням і відновленням G */
@@ -576,7 +893,26 @@ window.renderProperties = function (item) {
         })
         : item.type === 'element'
             ? schema.filter(function(prop) { return prop.key !== 'elSide'; })
-            : schema;
+            : schema.slice();
+    if (item._figureBinding) {
+        visibleSchema.push(
+            { group: 'Прив’язка до лінії' },
+            { key: 'figureBindingLine', label: 'Лінія батьківської фігури', type: 'info', readOnly: true },
+            { key: 'figureBindingStart', label: 'Початок прив’язки (м)', type: 'number', readOnly: false },
+            { key: 'figureBindingEnd', label: 'Кінець прив’язки (м)', type: 'number', readOnly: false },
+            { key: 'figureBindingOffset', label: 'Відступ від лінії (м)', type: 'number', readOnly: false }
+        );
+    }
+    if (item.constructFigure) {
+        visibleSchema.push(
+            { group: item._figureBinding ? 'Розміри прив’язаної фігури' : 'Розміри прямокутника' },
+            { key: 'constructWidth', label: 'Ширина (м)', type: 'number', readOnly: false },
+            { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false }
+        );
+        if (!item._figureBinding) {
+            visibleSchema.push({ type: 'constructDimensionTable' });
+        }
+    }
 
     /* ── Заголовок панелі з кнопкою + ── */
     const titleBar = document.createElement('div');
@@ -585,7 +921,7 @@ window.renderProperties = function (item) {
         'padding:4px 8px;display:flex;align-items:center;justify-content:space-between;',
         'border-bottom:2px solid #1e3a8a;',
     ].join('');
-    const typeIcon = item.type === 'building' ? '🏢' : item.type === 'element' ? '🪟' : item.type === 'contour' ? '⬡' : item.type === 'construct' ? '▬' : '🚪';
+    const typeIcon = item.constructFigure ? '▭' : item.type === 'building' ? '🏢' : item.type === 'element' ? '🪟' : item.type === 'contour' ? '⬡' : item.type === 'construct' ? '▬' : '🚪';
     const titleText = document.createElement('span');
     titleText.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     titleText.textContent = typeIcon + ' ' + (item.roomNumber || item.name || 'Без назви');
@@ -608,6 +944,17 @@ window.renderProperties = function (item) {
     table.style.cssText = 'width:100%;border-collapse:collapse;font-size:11px;';
 
     visibleSchema.forEach(function(prop) {
+        if (prop.type === 'constructDimensionTable') {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 2;
+            td.style.cssText = 'padding:4px 2px;';
+            td.appendChild(_makeConstructDimensionTable(item));
+            tr.appendChild(td);
+            table.appendChild(tr);
+            return;
+        }
+
         /* Заголовок групи */
         if (prop.group) {
             const tr = document.createElement('tr');
@@ -747,6 +1094,50 @@ window.renderProperties = function (item) {
         }
     }
 };
+
+function _makeConstructDimensionTable(item) {
+    const table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:10px;text-align:center;';
+
+    const header = document.createElement('tr');
+    ['№-№', 'Розворот', 'Видимість'].forEach(function(label) {
+        const th = document.createElement('th');
+        th.textContent = label;
+        th.style.cssText = 'padding:3px 2px;background:#eff6ff;color:#374151;border:1px solid #dbeafe;font-weight:700;';
+        header.appendChild(th);
+    });
+    table.appendChild(header);
+
+    (item.figureLines || []).forEach(function(lineData) {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f0f0f0';
+
+        const lineCell = document.createElement('td');
+        lineCell.textContent = lineData.from + '-' + lineData.to;
+        lineCell.style.cssText = 'padding:3px 4px;color:#374151;border-right:1px solid #e5e7eb;';
+        tr.appendChild(lineCell);
+
+        [
+            { suffix: 'Rotated', value: !!lineData.dimensionRotated },
+            { suffix: 'Visible', value: lineData.dimensionVisible !== false }
+        ].forEach(function(setting) {
+            const cell = document.createElement('td');
+            cell.style.cssText = 'padding:1px 2px;';
+            const control = _makeControl({
+                key: 'constructLine' + lineData.id + setting.suffix,
+                type: 'bool',
+                readOnly: false
+            }, setting.value, item);
+            control.style.justifyContent = 'center';
+            cell.appendChild(control);
+            tr.appendChild(cell);
+        });
+
+        table.appendChild(tr);
+    });
+
+    return table;
+}
 
 /** Показує inline-форму для додавання користувацької властивості */
 function _showAddCustomPropDialog(item, body) {
