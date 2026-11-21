@@ -1,6 +1,6 @@
 /**
  * lines-panel.js — Панель списку ліній у shapeModal.
- * Залежності: state.js, g.js, shape-editor.js, toast.js
+ * Залежності: core-state.js, shape-editor.js
  */
 
 window.updateLinesList = function () {

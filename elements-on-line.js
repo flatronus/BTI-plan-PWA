@@ -1,6 +1,6 @@
 /**
  * elements-on-line.js — Малювання архітектурних елементів на лінії.
- * Залежності: constants.js, svg-primitives.js
+ * Залежності: core-state.js, svg-primitives.js
  */
 
 window.drawElementsOnLine = function (parsedData, x1, y1, x2, y2, scale, targetGroup, overrideThickness, curveShapePoints) {

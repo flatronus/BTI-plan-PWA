@@ -24,6 +24,7 @@
                 <!-- Логотип -->
                 <div class="flex items-center">
                     <i class="fas fa-paint-brush text-blue-600 text-2xl"></i>
+                    <span id="app-version" class="app-version" title="Версія застосунку"></span>
                 </div>
 
                 <!-- Панель інструментів -->
@@ -35,15 +36,26 @@
                             <span class="toolbar-label ml-1 text-sm">Новий</span>
                         </button>
 
-                        <button class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="window.canvasManager && window.canvasManager.openCanvas()" title="Відкрити (Ctrl+O)">
+                        <button id="open-canvas-btn" type="button" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="openCanvasFile()" title="Відкрити (Ctrl+O)">
                             <i class="fas fa-folder-open text-gray-700"></i>
                             <span class="toolbar-label ml-1 text-sm">Відкрити</span>
                         </button>
 
-                        <button class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="window.saveActiveCanvas && window.saveActiveCanvas()" title="Зберегти (Ctrl+S)">
-                            <i class="fas fa-save text-gray-700"></i>
-                            <span class="toolbar-label ml-1 text-sm">Зберегти</span>
-                        </button>
+                        <div id="save-dropdown" class="save-dropdown">
+                            <button id="save-main-btn" class="toolbar-button px-2 py-1 hover:bg-gray-100 transition" onclick="window.saveActiveCanvas && window.saveActiveCanvas()" title="Зберегти (Ctrl+S)">
+                                <i class="fas fa-save text-gray-700"></i>
+                                <span class="toolbar-label ml-1 text-sm">Зберегти</span>
+                            </button>
+                            <button id="save-menu-btn" class="save-menu-btn hover:bg-gray-100 transition" onclick="toggleSaveMenu(event)" aria-haspopup="menu" aria-expanded="false" title="Інші способи збереження">
+                                <i class="fas fa-caret-down text-gray-700"></i>
+                            </button>
+                            <div id="save-menu" class="save-menu" role="menu" hidden>
+                                <button type="button" role="menuitem" onclick="saveAsFromMenu(event)">
+                                    <i class="fas fa-file-export"></i>
+                                    <span>Зберегти як</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="h-6 w-px bg-gray-300"></div>
@@ -422,23 +434,20 @@
     </div>
 
     <!-- Скрипти: порядок підключення важливий -->
-    <script src="constants.js"></script>       <!-- 1. Константи -->
-    <script src="state.js"></script>           <!-- 2. appState -->
-    <script src="g.js"></script>               <!-- 3. G — змінний стан -->
-    <script src="toast.js"></script>           <!-- 4. showToast() -->
-    <script src="svg-primitives.js"></script>  <!-- 5. SVG-хелпери -->
-    <script src="elements-on-line.js"></script><!-- 6. WI1 та ін. -->
-    <script src="canvas-manager.js"></script>  <!-- 7. canvasManager, zoom, save -->
-    <script src="hierarchy.js"></script>       <!-- 8. Дерево елементів -->
-    <script src="shape-editor.js"></script>    <!-- 9. Малювання фігур -->
-    <script src="shape-transfer.js"></script>  <!-- 10. Перенос на головне полотно -->
-    <script src="shape-transform.js"></script> <!-- 11. Переміщення та обертання -->
-    <script src="coord-modal.js"></script>     <!-- 12. Модалка координат -->
-    <script src="lines-panel.js"></script>     <!-- 13. Панель ліній -->
-    <script src="quick-shape.js"></script>     <!-- 14. Швидке створення фігур -->
-    <script src="constructs.js"></script>      <!-- 15. Конструктиви (полоски) -->
-    <script src="history.js"></script>         <!-- 16. Скасування й повторення -->
-    <script src="main.js"></script>            <!-- 17. Ініціалізація (останній) -->
+    <script src="core-state.js"></script>      <!-- 1. Константи, стан і toast -->
+    <script src="svg-primitives.js"></script>  <!-- 2. SVG-хелпери -->
+    <script src="elements-on-line.js"></script><!-- 3. WI1 та ін. -->
+    <script src="canvas-manager.js"></script>  <!-- 4. canvasManager, zoom, save -->
+    <script src="hierarchy.js"></script>       <!-- 5. Дерево елементів -->
+    <script src="shape-editor.js"></script>    <!-- 6. Малювання фігур -->
+    <script src="shape-transfer.js"></script>  <!-- 7. Перенос на головне полотно -->
+    <script src="shape-transform.js"></script> <!-- 8. Переміщення та обертання -->
+    <script src="coord-modal.js"></script>     <!-- 9. Модалка координат -->
+    <script src="lines-panel.js"></script>     <!-- 10. Панель ліній -->
+    <script src="quick-shape.js"></script>     <!-- 11. Швидке створення фігур -->
+    <script src="constructs.js"></script>      <!-- 12. Конструктиви (полоски) -->
+    <script src="history.js"></script>         <!-- 13. Скасування й повторення -->
+    <script src="main.js"></script>            <!-- 14. Ініціалізація (останній) -->
 
     <!-- PWA: реєстрація Service Worker -->
     <script>

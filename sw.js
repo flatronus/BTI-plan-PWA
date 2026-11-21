@@ -1,13 +1,10 @@
-/* BTIvectorPlans Service Worker v0.8.15 */
-const CACHE_NAME = 'btivector-v0.8.15';
+/* BTIvectorPlans Service Worker v0.8.40 */
+const CACHE_NAME = 'btivector-v0.8.40';
 
 const STATIC_ASSETS = [
     './index.html',
     './app.css',
-    './constants.js',
-    './state.js',
-    './g.js',
-    './toast.js',
+    './core-state.js',
     './svg-primitives.js',
     './elements-on-line.js',
     './canvas-manager.js',

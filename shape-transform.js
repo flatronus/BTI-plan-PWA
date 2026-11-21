@@ -1,6 +1,6 @@
 /**
  * shape-transform.js — Переміщення та обертання фігур на головному полотні.
- * Залежності: constants.js, state.js, g.js, hierarchy.js, shape-transfer.js
+ * Залежності: core-state.js, hierarchy.js, shape-transfer.js
  *
  * Стратегія transform:
  *   Кожна SVG-група має атрибут transform="translate(tx,ty) rotate(ra,cx0,cy0)"

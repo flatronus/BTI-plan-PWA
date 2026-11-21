@@ -1,6 +1,6 @@
 /**
  * svg-primitives.js — Низькорівневі SVG-хелпери.
- * Залежності: constants.js, g.js
+ * Залежності: core-state.js
  */
 
 window._renderSvgLine = function (svg, x1, y1, x2, y2, id) {

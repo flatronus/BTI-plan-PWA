@@ -1,6 +1,6 @@
 /**
  * constructs.js — Конструктиви: перетягування полосок на канву.
- * Залежності: constants.js, g.js, canvas-manager.js, toast.js
+ * Залежності: core-state.js, canvas-manager.js
  */
 
 /** Товщина полоски конструктиву в метрах */

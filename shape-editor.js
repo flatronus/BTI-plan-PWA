@@ -1,6 +1,6 @@
 /**
  * shape-editor.js — Редактор фігур: малювання, перемалювання, площа, free-лінії.
- * Залежності: constants.js, state.js, g.js, svg-primitives.js
+ * Залежності: core-state.js, svg-primitives.js
  */
 
 /* ── Перемикачі ── */

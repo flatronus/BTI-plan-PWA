@@ -1,6 +1,6 @@
 /**
  * quick-shape.js — Швидке створення фігур (прямокутник, трикутник).
- * Залежності: constants.js, g.js, svg-primitives.js, shape-editor.js, lines-panel.js, toast.js
+ * Залежності: core-state.js, svg-primitives.js, shape-editor.js, lines-panel.js
  */
 
 window.openQuickShapeModal = function () {

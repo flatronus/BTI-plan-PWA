@@ -28,6 +28,7 @@
                 fullName: canvas.fullName,
                 viewBox: cloneJson(canvas.viewBox),
                 savedPath: canvas.savedPath,
+                isDirty: canvas.isDirty === true,
                 hierarchyData: cloneJson(isActive ? (window.G?.hierarchyData || []) : (canvas.hierarchyData || [])),
                 hierarchyIdCounter: isActive ? (window.G?.hierarchyIdCounter || 1) : (canvas.hierarchyIdCounter || 1),
                 svg: svg ? svg.outerHTML : null
@@ -90,6 +91,7 @@
                     fullName: savedCanvas.fullName,
                     viewBox: cloneJson(savedCanvas.viewBox),
                     savedPath: savedCanvas.savedPath,
+                    isDirty: savedCanvas.isDirty === true,
                     hierarchyData: [],
                     hierarchyIdCounter: 1
                 };
@@ -111,6 +113,7 @@
             canvas.fullName = savedCanvas.fullName;
             canvas.viewBox = cloneJson(savedCanvas.viewBox);
             canvas.savedPath = savedCanvas.savedPath;
+            canvas.isDirty = savedCanvas.isDirty === true;
             canvas.hierarchyData = cloneJson(savedCanvas.hierarchyData);
             canvas.hierarchyIdCounter = savedCanvas.hierarchyIdCounter;
 
@@ -180,6 +183,10 @@
                 undoStack.push(pendingBefore);
                 if (undoStack.length > 100) undoStack.shift();
                 redoStack.length = 0;
+                const activeCanvas = window.canvasManager?.canvases.find(function (canvas) {
+                    return canvas.id === window.canvasManager.activeCanvasId;
+                });
+                if (activeCanvas) activeCanvas.isDirty = true;
             }
             pendingBefore = null;
             finalizing = false;

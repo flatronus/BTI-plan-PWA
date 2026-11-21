@@ -1,6 +1,6 @@
 /**
  * shape-transfer.js — Перенос фігури на головне полотно.
- * Залежності: constants.js, state.js, g.js, svg-primitives.js, elements-on-line.js, hierarchy.js
+ * Залежності: core-state.js, svg-primitives.js, elements-on-line.js, hierarchy.js
  */
 
 /** Заповнює SVG-групу лініями, розмірами та елементами поточної фігури */

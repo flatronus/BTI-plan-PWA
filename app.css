@@ -26,6 +26,13 @@ body {
 .toolbar-label {
     display: none;
 }
+.app-version {
+    margin-left: 8px;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
 @media (min-width: 1024px) {
     .toolbar-label {
         display: inline;
@@ -426,6 +433,11 @@ body {
         padding: 8px !important;
     }
 
+    .save-menu-btn {
+        min-width: 40px;
+        min-height: 40px;
+    }
+
     /* Більші touch-цілі для кнопок редактора фігур */
     .shape-btn {
         min-width: 40px;
@@ -447,6 +459,58 @@ body {
 .toolbar-button:disabled {
     opacity: 0.45;
     cursor: default;
+}
+
+.save-dropdown {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+    border-radius: 4px;
+}
+
+#save-main-btn {
+    border-radius: 4px 0 0 4px;
+}
+
+.save-menu-btn {
+    min-width: 28px;
+    border: 0;
+    border-left: 1px solid #d1d5db;
+    border-radius: 0 4px 4px 0;
+    background: transparent;
+    color: #374151;
+    cursor: pointer;
+}
+
+.save-menu {
+    position: absolute;
+    z-index: 1000;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 160px;
+    padding: 4px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.save-menu button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: transparent;
+    color: #374151;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.save-menu button:hover {
+    background: #f3f4f6;
 }
 
 /* Фіксована висота тулбара на мобільних */

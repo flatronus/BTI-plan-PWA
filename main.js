@@ -6,6 +6,10 @@
 
 document.addEventListener('DOMContentLoaded', function () {
 
+    /* ── Версію показано в головному меню ── */
+    const appVersion = document.getElementById('app-version');
+    if (appVersion) appVersion.textContent = window.APP_VERSION;
+
     /* ── Ініціалізація першого полотна ── */
     window.canvasManager.createCanvas();
 
@@ -66,6 +70,42 @@ document.addEventListener('DOMContentLoaded', function () {
         if (thickBtn) thickBtn.style.display = 'none';
     };
 
+    /** Випадаючий список дій збереження */
+    window.toggleSaveMenu = function (event) {
+        if (event) event.stopPropagation();
+        const menu = document.getElementById('save-menu');
+        const menuButton = document.getElementById('save-menu-btn');
+        if (!menu || !menuButton) return;
+        const willOpen = menu.hidden;
+        menu.hidden = !willOpen;
+        menuButton.setAttribute('aria-expanded', String(willOpen));
+    };
+
+    window.saveAsFromMenu = function (event) {
+        if (event) event.stopPropagation();
+        const menu = document.getElementById('save-menu');
+        const menuButton = document.getElementById('save-menu-btn');
+        if (menu) menu.hidden = true;
+        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+        if (typeof saveActiveCanvasAs === 'function') saveActiveCanvasAs();
+    };
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest && event.target.closest('#save-dropdown')) return;
+        const menu = document.getElementById('save-menu');
+        const menuButton = document.getElementById('save-menu-btn');
+        if (menu) menu.hidden = true;
+        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        const menu = document.getElementById('save-menu');
+        const menuButton = document.getElementById('save-menu-btn');
+        if (menu) menu.hidden = true;
+        if (menuButton) menuButton.setAttribute('aria-expanded', 'false');
+    });
+
     /** Відкрити / приховати панель ієрархії */
     window.toggleHierarchyPanel = function () {
         const panel = document.getElementById('hierarchy-panel');
@@ -82,8 +122,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
                 case 'n': e.preventDefault(); canvasManager.createCanvas();  break;
-                case 'o': e.preventDefault(); canvasManager.openCanvas();    break;
-                case 's': e.preventDefault(); saveActiveCanvas();             break;
+                case 'o': e.preventDefault(); openCanvasFile();               break;
+                case 's':
+                    e.preventDefault();
+                    if (e.shiftKey) saveActiveCanvasAs();
+                    else saveActiveCanvas();
+                    break;
                 case '=':
                 case '+': e.preventDefault(); zoomIn();                       break;
                 case '-': e.preventDefault(); zoomOut();                      break;

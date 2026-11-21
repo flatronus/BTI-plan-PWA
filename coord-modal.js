@@ -1,6 +1,6 @@
 /**
  * coord-modal.js — Модалка координат: парсинг вводу, кнопки напрямку/типу/елементів.
- * Залежності: state.js, g.js, shape-editor.js, toast.js
+ * Залежності: core-state.js, shape-editor.js
  */
 
 /* ── Додати точку ── */
