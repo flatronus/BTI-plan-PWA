@@ -14,6 +14,54 @@ window._renderSvgLine = function (svg, x1, y1, x2, y2, id) {
     svg.appendChild(line);
 };
 
+/** Малює стрілку напряму на точку замикання фігури */
+window._renderClosingDirectionArrow = function (svg, x1, y1, x2, y2, lineData, shapePoints) {
+    let ux = 0, uy = 0;
+
+    if (lineData && lineData.lineType === 'curve' && typeof _getSvgCurveGeometry === 'function') {
+        const height = typeof _getLineCurveHeight === 'function'
+            ? _getLineCurveHeight(lineData)
+            : null;
+        if (Number.isFinite(height) && height !== 0) {
+            const curve = _getSvgCurveGeometry(x1, y1, x2, y2, height * SCALE, shapePoints);
+            if (curve) {
+                const endPoint = curve.pointAtDistance(curve.arcLength);
+                ux = endPoint.ux;
+                uy = endPoint.uy;
+            }
+        }
+    }
+
+    if (ux === 0 && uy === 0) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const length = Math.hypot(dx, dy);
+        if (length === 0) return;
+        ux = dx / length;
+        uy = dy / length;
+    }
+
+    const size = 12;
+    const width = 5;
+    const baseX = x2 - ux * size;
+    const baseY = y2 - uy * size;
+    const px = -uy, py = ux;
+    const points = [
+        x2 + ',' + y2,
+        (baseX + px * width) + ',' + (baseY + py * width),
+        (baseX - px * width) + ',' + (baseY - py * width)
+    ].join(' ');
+
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    arrow.setAttribute('points', points);
+    arrow.setAttribute('fill', '#111827');
+    arrow.setAttribute('stroke', '#111827');
+    arrow.setAttribute('stroke-width', '1');
+    arrow.setAttribute('vector-effect', 'non-scaling-stroke');
+    arrow.setAttribute('data-closing-arrow', '1');
+    arrow.style.pointerEvents = 'none';
+    svg.appendChild(arrow);
+};
+
 window._getSvgCurveGeometry = function (x1, y1, x2, y2, height, shapePoints) {
     const dx = x2 - x1, dy = y2 - y1;
     const length = Math.hypot(dx, dy);

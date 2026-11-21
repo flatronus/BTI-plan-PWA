@@ -3,7 +3,7 @@
  */
 
 /* ── Глобальні константи застосунку ── */
-const APP_VERSION = 'v0.8.40';
+const APP_VERSION = 'v0.8.50';
 window.APP_VERSION = APP_VERSION;
 const SCALE = 50;
 const A4_OFFSET = 50;

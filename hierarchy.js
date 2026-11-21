@@ -1059,6 +1059,7 @@ window.renderProperties = function (item) {
         item._customProps.forEach(function(cp, idx) {
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #f0f0f0';
+            
 
             const tdL = document.createElement('td');
             tdL.style.cssText = 'color:#374151;padding:3px 6px;width:46%;background:#f9fafb;border-right:1px solid #e5e7eb;vertical-align:middle;';
@@ -1112,6 +1113,7 @@ window.renderProperties = function (item) {
                 const name = ELEMENT_NAMES[el.code] || el.code;
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid #f0f0f0';
+                
                 const td1 = document.createElement('td');
                 td1.style.cssText = 'color:#9C27B0;font-weight:700;padding:3px 6px;width:46%;background:#f9fafb;border-right:1px solid #e5e7eb;';
                 td1.textContent = el.code;

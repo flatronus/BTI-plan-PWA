@@ -433,6 +433,40 @@
         </div>
     </div>
 
+    <!-- Параметри фігури при перетягуванні -->
+    <div id="figureParamsModal" class="modal" aria-hidden="true">
+        <div id="figureParamsWindow" class="figure-params-window" role="dialog" aria-modal="true" aria-labelledby="figureParamsTitle">
+            <div id="figureParamsHeader" class="figure-params-header">
+                <h3 id="figureParamsTitle">Параметри фігури</h3>
+            </div>
+            <div class="figure-params-body">
+                <label for="figureParamOffset">Відступ від лінії (м)</label>
+                <input id="figureParamOffset" type="text" inputmode="decimal" placeholder="0">
+
+                <label for="figureParamStart">Початок прив’язки (м)</label>
+                <input id="figureParamStart" type="text" inputmode="decimal" placeholder="0">
+
+                <label for="figureParamEnd">Кінець прив’язки (м)</label>
+                <input id="figureParamEnd" type="text" inputmode="decimal" placeholder="0">
+
+                <label class="figure-params-checkbox" for="figureParamReverse">
+                    <input id="figureParamReverse" type="checkbox">
+                    <span>Відлік від кінця лінії</span>
+                </label>
+
+                <label for="figureParamWidth">Ширина (м)</label>
+                <input id="figureParamWidth" type="text" inputmode="decimal" placeholder="3">
+
+                <label for="figureParamHeight">Висота (м)</label>
+                <input id="figureParamHeight" type="text" inputmode="decimal" placeholder="3">
+            </div>
+            <div class="modal-buttons figure-params-buttons">
+                <button type="button" class="btn-copy" onclick="applyFigureParams()">Ок</button>
+                <button type="button" class="btn-close" onclick="cancelFigureParams()">Закрити</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Скрипти: порядок підключення важливий -->
     <script src="core-state.js"></script>      <!-- 1. Константи, стан і toast -->
     <script src="svg-primitives.js"></script>  <!-- 2. SVG-хелпери -->

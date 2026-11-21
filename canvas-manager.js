@@ -136,36 +136,6 @@ window.canvasManager = {
     },
 
     openFileDialog() {
-        const self = this;
-
-        if ('showOpenFilePicker' in window && !this.filePickersBlocked) {
-            (async function () {
-                let handle = null;
-                try {
-                    const handles = await window.showOpenFilePicker({
-                        types: [{ description: 'SVG Files', accept: { 'image/svg+xml': ['.svg'] } }],
-                        multiple: false
-                    });
-                    handle = handles && handles[0];
-                } catch (err) {
-                    if (err && err.name === 'AbortError') return;
-                    self.filePickersBlocked = true;
-                    showToast('Натисніть «Відкрити» ще раз', 'info');
-                    return;
-                }
-                if (!handle) return;
-                try {
-                    const file = await handle.getFile();
-                    const content = await file.text();
-                    self.loadSvgFromContent(content, file.name, handle);
-                } catch (err) {
-                    console.error(err);
-                    showToast('Помилка відкриття: ' + (err.message || err.name), 'error', 6000);
-                }
-            })();
-            return;
-        }
-
         this.openFileViaInput();
     },
 
@@ -206,7 +176,8 @@ window.canvasManager = {
             const xmlDoc = new DOMParser().parseFromString(cleanContent, 'image/svg+xml');
             if (!xmlDoc.querySelector('parsererror') && xmlDoc.documentElement &&
                 xmlDoc.documentElement.nodeName.toLowerCase() === 'svg' &&
-                xmlDoc.documentElement.namespaceURI === 'http://www.w3.org/2000/svg') {
+                (!xmlDoc.documentElement.namespaceURI ||
+                 xmlDoc.documentElement.namespaceURI === 'http://www.w3.org/2000/svg')) {
                 importedSvg = xmlDoc.documentElement;
             }
         } catch (error) {
@@ -615,31 +586,71 @@ window.canvasManager = {
 
     attachCanvasEvents(svgElement, canvas) {
         let isDragging = false, startX, startY;
+        let startViewBox = null;
         let initialDistance = 0, initialViewBox = null;
+        let initialPinchSvgPoint = null;
 
         // Перевіряє чи активний режим трансформації (не drag полотна)
         const _isTransformMode = () =>
             window.shapeTransform && window.shapeTransform.getMode() !== 'pan';
 
+        const applyViewBox = function () {
+            svgElement.setAttribute('viewBox',
+                `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
+        };
+
+        const screenToSvg = function (clientX, clientY) {
+            const ctm = svgElement.getScreenCTM();
+            if (!ctm) return null;
+            const point = svgElement.createSVGPoint();
+            point.x = clientX;
+            point.y = clientY;
+            try {
+                return point.matrixTransform(ctm.inverse());
+            } catch (error) {
+                return null;
+            }
+        };
+
+        const pinchMidpoint = function (touches) {
+            return {
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2
+            };
+        };
+
+        const getWorldPerPixel = function () {
+            const x1 = screenToSvg(0, 0);
+            const x2 = screenToSvg(1, 0);
+            const y1 = screenToSvg(0, 0);
+            const y2 = screenToSvg(0, 1);
+            return {
+                x: x1 && x2 ? Math.abs(x2.x - x1.x) : startViewBox.width / svgElement.clientWidth,
+                y: y1 && y2 ? Math.abs(y2.y - y1.y) : startViewBox.height / svgElement.clientHeight
+            };
+        };
+
         svgElement.addEventListener('mousedown', (e) => {
             if (e.button === 0 && !_isTransformMode()) {
+                e.preventDefault();
                 isDragging = true; startX = e.clientX; startY = e.clientY;
+                startViewBox = { ...canvas.viewBox };
                 svgElement.style.cursor = 'grabbing';
             }
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!isDragging || _isTransformMode()) return;
-            const dx = (startX - e.clientX) * (canvas.viewBox.width  / svgElement.clientWidth);
-            const dy = (startY - e.clientY) * (canvas.viewBox.height / svgElement.clientHeight);
-            canvas.viewBox.x += dx; canvas.viewBox.y += dy;
-            svgElement.setAttribute('viewBox',
-                `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
-            startX = e.clientX; startY = e.clientY;
+            if (!isDragging || _isTransformMode() || !startViewBox) return;
+            e.preventDefault();
+            const worldPerPixel = getWorldPerPixel();
+            canvas.viewBox.x = startViewBox.x - (e.clientX - startX) * worldPerPixel.x;
+            canvas.viewBox.y = startViewBox.y - (e.clientY - startY) * worldPerPixel.y;
+            applyViewBox();
         });
 
         document.addEventListener('mouseup', () => {
             isDragging = false;
+            startViewBox = null;
             if (!_isTransformMode()) svgElement.style.cursor = 'grab';
         });
 
@@ -647,39 +658,83 @@ window.canvasManager = {
             if (_isTransformMode()) return;
             if (e.touches.length === 1) {
                 isDragging = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+                startViewBox = { ...canvas.viewBox };
             } else if (e.touches.length === 2) {
                 isDragging = false;
+                const midpoint = pinchMidpoint(e.touches);
                 initialDistance = Math.hypot(
                     e.touches[1].clientX - e.touches[0].clientX,
                     e.touches[1].clientY - e.touches[0].clientY
                 );
                 initialViewBox = { ...canvas.viewBox };
+                initialPinchSvgPoint = screenToSvg(midpoint.x, midpoint.y);
             }
-        });
+        }, { passive: true });
 
         svgElement.addEventListener('touchmove', (e) => {
             e.preventDefault();
             if (e.touches.length === 1 && isDragging) {
-                const dx = (startX - e.touches[0].clientX) * (canvas.viewBox.width  / svgElement.clientWidth);
-                const dy = (startY - e.touches[0].clientY) * (canvas.viewBox.height / svgElement.clientHeight);
-                canvas.viewBox.x += dx; canvas.viewBox.y += dy;
-                svgElement.setAttribute('viewBox',
-                    `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
-                startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+                if (!startViewBox) return;
+                const worldPerPixel = getWorldPerPixel();
+                canvas.viewBox.x = startViewBox.x -
+                    (e.touches[0].clientX - startX) * worldPerPixel.x;
+                canvas.viewBox.y = startViewBox.y -
+                    (e.touches[0].clientY - startY) * worldPerPixel.y;
+                applyViewBox();
             } else if (e.touches.length === 2 && initialDistance > 0) {
                 const currentDist = Math.hypot(
                     e.touches[1].clientX - e.touches[0].clientX,
                     e.touches[1].clientY - e.touches[0].clientY
                 );
-                const scale = initialDistance / currentDist;
-                canvas.viewBox.width  = Math.max(200, Math.min(5000, initialViewBox.width  * scale));
-                canvas.viewBox.height = Math.max(200, Math.min(5000, initialViewBox.height * scale));
-                svgElement.setAttribute('viewBox',
-                    `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
+                const zoomFactor = Math.max(0.25, Math.min(4, currentDist / initialDistance));
+                const newWidth = Math.max(200, Math.min(5000, initialViewBox.width / zoomFactor));
+                const newHeight = Math.max(200, Math.min(5000,
+                    initialViewBox.height * (newWidth / initialViewBox.width)));
+                const midpoint = pinchMidpoint(e.touches);
+                const rect = svgElement.getBoundingClientRect();
+                const scale = Math.min(rect.width / newWidth, rect.height / newHeight);
+                const offsetX = (rect.width - newWidth * scale) / 2;
+                const offsetY = (rect.height - newHeight * scale) / 2;
+
+                canvas.viewBox.width = newWidth;
+                canvas.viewBox.height = newHeight;
+                if (initialPinchSvgPoint) {
+                    canvas.viewBox.x = initialPinchSvgPoint.x -
+                        (midpoint.x - rect.left - offsetX) / scale;
+                    canvas.viewBox.y = initialPinchSvgPoint.y -
+                        (midpoint.y - rect.top - offsetY) / scale;
+                }
+                applyViewBox();
+            }
+        }, { passive: false });
+
+        svgElement.addEventListener('touchend', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                startViewBox = { ...canvas.viewBox };
+            } else {
+                isDragging = false;
+            }
+            if (e.touches.length === 0) {
+                initialDistance = 0;
+                initialViewBox = null;
+                initialPinchSvgPoint = null;
             }
         });
 
-        svgElement.addEventListener('touchend', () => { isDragging = false; initialDistance = 0; });
+        svgElement.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = svgElement.getBoundingClientRect();
+            const normalizedDelta = e.deltaMode === 1
+                ? e.deltaY * 16
+                : e.deltaMode === 2
+                    ? e.deltaY * rect.height
+                    : e.deltaY;
+            const factor = Math.exp(Math.max(-100, Math.min(100, normalizedDelta)) * 0.0015);
+            window._zoomCanvasAt(canvas, svgElement, e.clientX, e.clientY, factor);
+        }, { passive: false });
 
         svgElement.style.cursor = 'grab';
         if (/Android|iPhone|iPad/.test(navigator.userAgent)) svgElement.style.touchAction = 'none';
@@ -687,24 +742,53 @@ window.canvasManager = {
 };
 
 /* ── Zoom ── */
+window._zoomCanvasAt = function (canvas, svgElement, clientX, clientY, factor) {
+    if (!canvas || !svgElement) return;
+    factor = Math.max(0.8, Math.min(1.25, factor));
+    const rect = svgElement.getBoundingClientRect();
+    const ctm = svgElement.getScreenCTM();
+    if (!ctm) return;
+    const point = svgElement.createSVGPoint();
+    point.x = clientX;
+    point.y = clientY;
+    let anchor;
+    try {
+        anchor = point.matrixTransform(ctm.inverse());
+    } catch (error) {
+        anchor = {
+            x: canvas.viewBox.x + canvas.viewBox.width / 2,
+            y: canvas.viewBox.y + canvas.viewBox.height / 2
+        };
+    }
+
+    const oldWidth = canvas.viewBox.width;
+    const oldHeight = canvas.viewBox.height;
+    const newWidth = Math.max(200, Math.min(5000, oldWidth * factor));
+    const newHeight = Math.max(200, Math.min(5000, oldHeight * factor));
+    if (newWidth === oldWidth && newHeight === oldHeight) return;
+
+    canvas.viewBox.x = anchor.x - (anchor.x - canvas.viewBox.x) * (newWidth / oldWidth);
+    canvas.viewBox.y = anchor.y - (anchor.y - canvas.viewBox.y) * (newHeight / oldHeight);
+    canvas.viewBox.width = newWidth;
+    canvas.viewBox.height = newHeight;
+    svgElement.setAttribute('viewBox',
+        `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
+};
+
 window.zoomIn = function () {
     const canvas = _getActiveCanvas(); if (!canvas) return;
     const svgEl  = _getActiveSvg(canvas); if (!svgEl) return;
-    canvas.viewBox.width  *= 0.9; canvas.viewBox.height *= 0.9;
-    canvas.viewBox.x += canvas.viewBox.width  * 0.05;
-    canvas.viewBox.y += canvas.viewBox.height * 0.05;
-    svgEl.setAttribute('viewBox',
-        `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
+    const rect = svgEl.getBoundingClientRect();
+    window._zoomCanvasAt(canvas, svgEl, rect.left + rect.width / 2,
+        rect.top + rect.height / 2, 0.9);
 };
 
 window.zoomOut = function () {
     const canvas = _getActiveCanvas(); if (!canvas) return;
     const svgEl  = _getActiveSvg(canvas); if (!svgEl) return;
-    canvas.viewBox.width  *= 1.1; canvas.viewBox.height *= 1.1;
-    canvas.viewBox.x -= canvas.viewBox.width  * 0.045;
-    canvas.viewBox.y -= canvas.viewBox.height * 0.045;
-    svgEl.setAttribute('viewBox',
-        `${canvas.viewBox.x} ${canvas.viewBox.y} ${canvas.viewBox.width} ${canvas.viewBox.height}`);
+    const rect = svgEl.getBoundingClientRect();
+    window._zoomCanvasAt(canvas, svgEl, rect.left + rect.width / 2,
+        rect.top + rect.height / 2, 1.1);
 };
 
 /* ── Безпечний JSON: без DOM-вузлів, функцій і циклічних посилань ── */

@@ -40,6 +40,12 @@ window._fillSvgGroup = function (group, offsetX, offsetY, parentHierarchyItem) {
             line.setAttribute('vector-effect', 'non-scaling-stroke');
             group.appendChild(line);
         }
+        if (lineData.isClosing && typeof _renderClosingDirectionArrow === 'function') {
+            _renderClosingDirectionArrow(group, x1, y1, x2, y2,
+                lineData, G.shapePoints.map(function(point) {
+                    return { x: point.x + offsetX, y: point.y + offsetY };
+                }));
+        }
         const isSharedBoundary = lineData._sharedBoundary ||
             (parentHierarchyItem?._figureBinding && lineData.id === 1 &&
                 Number(parentHierarchyItem._figureBinding.offset || 0) === 0);

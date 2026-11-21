@@ -291,6 +291,13 @@ window.drawLineOnCanvas = function (parsedData) {
     } else {
         _renderSvgLine(svg, lastPoint.x, lastPoint.y, endX, endY, G.lineIdCounter);
     }
+    if (isClosing && typeof _renderClosingDirectionArrow === 'function') {
+        _renderClosingDirectionArrow(svg, lastPoint.x, lastPoint.y, endX, endY,
+            parsedData.lineType === 'curve'
+                ? { lineType: 'curve', elements: parsedData.elements }
+                : { lineType: 'line' },
+            G.shapePoints.concat({ x: endX, y: endY }));
+    }
     drawLineDimension(lastPoint.x, lastPoint.y, endX, endY, lineLength, null);
     drawElementsOnLine(parsedData, lastPoint.x, lastPoint.y, endX, endY, SCALE, null, undefined,
         G.shapePoints.concat({ x: endX, y: endY }));
@@ -667,6 +674,10 @@ window.redrawEntireFigure = function () {
                     _getLineCurveHeight(lineData) * SCALE, lineData.id, G.shapePoints);
             } else {
                 _renderSvgLine(svg, fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.id);
+            }
+            if (lineData.isClosing && typeof _renderClosingDirectionArrow === 'function') {
+                _renderClosingDirectionArrow(svg, fromPt.x, fromPt.y, toPt.x, toPt.y,
+                    lineData, G.shapePoints);
             }
             drawLineDimension(fromPt.x, fromPt.y, toPt.x, toPt.y, lineData.length, lineData);
             drawElementsOnLine(lineData, fromPt.x, fromPt.y, toPt.x, toPt.y, SCALE, null, undefined, G.shapePoints);
@@ -1421,6 +1432,9 @@ window._addLineToElementEditor = function (parsedData) {
 window._drawShapeLine = function (x1, y1, x2, y2, length, isClosing, lineData) {
     const svg = document.getElementById('shapeCanvas');
     _renderSvgLine(svg, x1, y1, x2, y2);
+    if (isClosing && typeof _renderClosingDirectionArrow === 'function') {
+        _renderClosingDirectionArrow(svg, x1, y1, x2, y2, lineData, G.shapePoints);
+    }
     const numLen = typeof length === 'number' ? length : parseFloat(length);
     drawLineDimension(x1, y1, x2, y2, numLen, lineData);
     if (!isClosing) _renderSvgPoint(svg, x2, y2, G.pointCounter + 1);
