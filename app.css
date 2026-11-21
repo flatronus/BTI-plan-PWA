@@ -444,6 +444,11 @@ body {
     touch-action: manipulation;
 }
 
+.toolbar-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 /* Фіксована висота тулбара на мобільних */
 @media (max-width: 767px) {
     .toolbar-button {

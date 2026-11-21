@@ -48,6 +48,21 @@
 
                     <div class="h-6 w-px bg-gray-300"></div>
 
+                    <!-- Історія змін -->
+                    <div class="flex items-center gap-x-1 md:gap-x-2">
+                        <button id="btn-history-undo" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="window.undoLastAction()" title="Скасувати останню дію (Ctrl+Z)">
+                            <i class="fas fa-undo text-gray-700"></i>
+                            <span class="toolbar-label ml-1 text-sm">Скасувати</span>
+                        </button>
+
+                        <button id="btn-history-redo" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="window.redoLastAction()" title="Повторити скасовану дію (Ctrl+Y)">
+                            <i class="fas fa-redo text-gray-700"></i>
+                            <span class="toolbar-label ml-1 text-sm">Повторити</span>
+                        </button>
+                    </div>
+
+                    <div class="h-6 w-px bg-gray-300"></div>
+
                     <!-- Інструменти -->
                     <div class="flex items-center gap-x-1 md:gap-x-2">
                         <button id="btn-mode-pan" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition active-tool" onclick="shapeTransform.setMode('pan')" title="Рука — переміщення полотна (H)">
@@ -422,7 +437,8 @@
     <script src="lines-panel.js"></script>     <!-- 13. Панель ліній -->
     <script src="quick-shape.js"></script>     <!-- 14. Швидке створення фігур -->
     <script src="constructs.js"></script>      <!-- 15. Конструктиви (полоски) -->
-    <script src="main.js"></script>            <!-- 16. Ініціалізація (останній) -->
+    <script src="history.js"></script>         <!-- 16. Скасування й повторення -->
+    <script src="main.js"></script>            <!-- 17. Ініціалізація (останній) -->
 
     <!-- PWA: реєстрація Service Worker -->
     <script>
