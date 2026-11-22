@@ -233,7 +233,9 @@ window.canvasManager = {
         }
         if (!importedSvg) importedSvg = extractSvgFragment();
         if (!importedSvg) {
-            showToast('Невірний SVG-файл', 'error');
+            showToast(cleanContent.trim().length === 0
+                ? 'Файл порожній (0 байт): його було збережено з помилкою. Збережіть план ще раз.'
+                : 'Невірний SVG-файл', 'error', 6000);
             return;
         }
 
@@ -555,7 +557,8 @@ window.canvasManager = {
                 link.href = url; link.download = fileName; link.style.display = 'none';
                 document.body.appendChild(link);
                 link.click();
-                setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 1000);
+                setTimeout(() => { if (link.parentNode) link.parentNode.removeChild(link); }, 1000);
+                setTimeout(() => URL.revokeObjectURL(url), 120000);
                 self.renameCanvasFromFile(canvas, fileName);
                 canvas.isDirty = false;
                 showToast(`Файл збережено: ${fileName}`, 'success');
@@ -618,10 +621,8 @@ window.canvasManager = {
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
-        setTimeout(() => {
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }, 1000);
+        setTimeout(() => { if (link.parentNode) link.parentNode.removeChild(link); }, 1000);
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
         this.renameCanvasFromFile(canvas, normalizedName);
         canvas.fileHandle = null;
         canvas.isDirty = false;
