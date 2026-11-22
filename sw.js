@@ -1,5 +1,5 @@
-/* BTIvectorPlans Service Worker v0.8.62 */
-const CACHE_NAME = 'btivector-v0.8.62';
+/* BTIvectorPlans Service Worker v0.8.63 */
+const CACHE_NAME = 'btivector-v0.8.63';
 
 const STATIC_ASSETS = [
     './index.html',
@@ -57,17 +57,16 @@ self.addEventListener('fetch', (e) => {
         return;
     }
 
-    // Локальні ресурси — cache-first
+    // Локальні ресурси — network-first, щоб оновлена версія не лишалася в старому кеші
     e.respondWith(
-        caches.match(e.request).then((cached) => {
-            if (cached) return cached;
-            return fetch(e.request).then((r) => {
+        fetch(e.request)
+            .then((r) => {
                 if (r && r.status === 200) {
                     const clone = r.clone();
                     caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
                 }
                 return r;
-            });
-        })
+            })
+            .catch(() => caches.match(e.request))
     );
 });
