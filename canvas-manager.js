@@ -547,6 +547,7 @@ window.canvasManager = {
             if (!/\.svg$/i.test(fileName)) fileName += '.svg';
             const handle   = await window.showSaveFilePicker({
                 suggestedName: fileName,
+                startIn: 'documents',
                 types: [{ description: 'SVG Files', accept: { 'image/svg+xml': ['.svg'] } }]
             });
             const writable = await handle.createWritable({ keepExistingData: false });
@@ -620,6 +621,7 @@ window.canvasManager = {
         try {
             const handle = await window.showSaveFilePicker({
                 suggestedName,
+                startIn: 'documents',
                 types: [{ description: 'SVG Files', accept: { 'image/svg+xml': ['.svg'] } }]
             });
             const writable = await handle.createWritable({ keepExistingData: false });
