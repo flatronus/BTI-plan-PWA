@@ -143,25 +143,56 @@ window.canvasManager = {
         const self = this;
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.svg,image/svg+xml';
+        input.accept = '.svg,image/svg+xml,text/xml,application/xml';
+        input.setAttribute('accept', input.accept);
         input.style.display = 'none';
 
         input.addEventListener('change', function (event) {
             const file = event.target.files && event.target.files[0];
             input.remove();
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function () {
+            const openText = function (text) {
                 try {
-                    self.loadSvgFromContent(String(reader.result || ''), file.name, null);
+                    self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null);
                 } catch (err) {
                     showToast('Помилка відкриття: ' + (err.message || err.name), 'error');
                 }
             };
-            reader.onerror = function () {
-                showToast('Не вдалося прочитати SVG-файл', 'error');
-            };
-            reader.readAsText(file);
+            if (typeof file.arrayBuffer === 'function') {
+                file.arrayBuffer().then(function (buffer) {
+                    const bytes = new Uint8Array(buffer);
+                    let encoding = 'utf-8';
+                    if (bytes.length >= 2) {
+                        if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
+                        else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
+                    }
+                    if (encoding === 'utf-8' && bytes.length >= 4 &&
+                        bytes[0] === 0x00 && bytes[1] === 0x3C &&
+                        bytes[2] === 0x00 && bytes[3] === 0x3F) {
+                        encoding = 'utf-16le';
+                    }
+                    if (encoding === 'utf-8' && bytes.length >= 4 &&
+                        bytes[0] === 0x3C && bytes[1] === 0x00 &&
+                        bytes[2] === 0x3F && bytes[3] === 0x00) {
+                        encoding = 'utf-16be';
+                    }
+                    try {
+                        openText(new TextDecoder(encoding).decode(buffer));
+                    } catch (error) {
+                        openText(new TextDecoder('utf-8').decode(buffer));
+                    }
+                }).catch(function () {
+                    const reader = new FileReader();
+                    reader.onload = function () { openText(reader.result); };
+                    reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
+                    reader.readAsText(file);
+                });
+            } else {
+                const reader = new FileReader();
+                reader.onload = function () { openText(reader.result); };
+                reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
+                reader.readAsText(file);
+            }
         }, { once: true });
         input.addEventListener('cancel', function () { input.remove(); }, { once: true });
 
@@ -172,6 +203,18 @@ window.canvasManager = {
     loadSvgFromContent(svgContent, name, fileHandle) {
         const cleanContent = String(svgContent || '').replace(/^\uFEFF/, '');
         let importedSvg = null;
+        const svgMarker = cleanContent.match(/<svg\b[^>]*>/i);
+        const extractSvgFragment = function () {
+            if (!svgMarker) return null;
+            const svgStart = svgMarker.index;
+            const svgTagEnd = svgMarker.index + svgMarker[0].length;
+            const svgEnd = cleanContent.toLowerCase().lastIndexOf('</svg>');
+            if (svgEnd < svgTagEnd) return null;
+            const fragment = cleanContent.substring(svgStart, svgEnd + 6);
+            const temp = document.createElement('div');
+            temp.innerHTML = fragment;
+            return temp.querySelector('svg');
+        };
         try {
             const xmlDoc = new DOMParser().parseFromString(cleanContent, 'image/svg+xml');
             if (!xmlDoc.querySelector('parsererror') && xmlDoc.documentElement &&
@@ -188,6 +231,7 @@ window.canvasManager = {
             temp.innerHTML = cleanContent;
             importedSvg = temp.querySelector('svg');
         }
+        if (!importedSvg) importedSvg = extractSvgFragment();
         if (!importedSvg) {
             showToast('Невірний SVG-файл', 'error');
             return;
@@ -808,6 +852,9 @@ window.safeStringify = function (value) {
 
 /* ── Серіалізація SVG для файла (з xmlns) ── */
 window.serializeSvgForFile = function (svgEl) {
+    if (svgEl && !svgEl.hasAttribute('xmlns')) {
+        svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
     const text = new XMLSerializer().serializeToString(svgEl);
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + text;
 };

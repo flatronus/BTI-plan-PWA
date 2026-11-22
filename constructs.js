@@ -200,7 +200,73 @@ let _cDragType    = 'construct';
 let _cGhost       = null;   // SVG <rect> або <line> — візуальний привид
 let _cTargetLine  = null;   // { x1,y1,x2,y2, lineData, item } — знайдена лінія
 let _cActiveSvg   = null;
-let _figureParamsContext = null;
+
+function _selectDroppedConstructItem(item) {
+    if (!item) return;
+    if (typeof selectHierarchyItem === 'function') selectHierarchyItem(item);
+    if (typeof window.toggleAccordion === 'function') {
+        window.toggleAccordion('panel-properties');
+    } else {
+        document.querySelectorAll('.accordion-section').forEach(function(section) {
+            section.classList.toggle('accordion-open', section.id === 'panel-properties');
+        });
+    }
+}
+
+function _findDroppedLineElementItem(parentItem, lineData, code, start) {
+    if (!parentItem || !lineData) return null;
+    const lineTo = lineData.to ?? 'c';
+    const elKey = `wi_${lineData.from}_${lineTo}_${code}_${start}`;
+    const children = parentItem.children || [];
+
+    let elItem = children.find(function(child) {
+        return child.type === 'element' &&
+            (child._elKey === elKey || (
+                child.elCode === code &&
+                child.lineFrom === lineData.from &&
+                child.lineTo === lineData.to &&
+                Math.abs(Number(child.elStart) - Number(start)) < 0.001
+            ));
+    });
+
+    if (!elItem) {
+        elItem = children.find(function(child) {
+            return child.type === 'element' &&
+                child.elCode === code &&
+                child._hostLineId === lineData.id;
+        });
+    }
+
+    if (!elItem) {
+        const elGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        elItem = {
+            id: G.hierarchyIdCounter++,
+            type: 'element',
+            name: ((typeof ELEMENT_NAMES !== 'undefined' ? ELEMENT_NAMES[code] : null) || code),
+            _elKey: elKey,
+            _hostLineId: lineData.id,
+            elCode: code,
+            elStart: start,
+            elEnd: start + (code === 'WI1' ? WINDOW_LENGTH_M : code === 'KO1' ? 1 : DOOR_LENGTH_M),
+            elSide: 1,
+            elThickness: code === 'KO1' ? 0.4 : ELEMENT_THICKNESS,
+            elOffset: 0,
+            elPlacement: 'inside',
+            elFill: code === 'KO1' ? '#ff0000' : '#ff0000',
+            ignoreArea: false,
+            reverseReference: false,
+            lineFrom: lineData.from,
+            lineTo: lineData.to,
+            svgGroup: elGroup,
+            children: [],
+            expanded: false,
+            parentId: parentItem.id
+        };
+        elGroup.setAttribute('data-hierarchy-id', elItem.id);
+        parentItem.children.push(elItem);
+    }
+    return elItem;
+}
 
 function _startConstructDrag(clientX, clientY, thicknessM, dragType) {
     _cDragging   = true;
@@ -416,8 +482,8 @@ function _finishConstructDrop(clientX, clientY) {
     document.removeEventListener('touchend',  _onConstructTouchEnd);
 
     if (_cDragType === 'figure') {
-        if (_cTargetLine) _openFigureParamsModal(_cTargetLine);
-        else _openFigureParamsModal(null, clientX, clientY);
+        if (_cTargetLine) _placeBoundFigure(_cTargetLine);
+        else _placeConstructFigure(clientX, clientY);
         _cTargetLine = null;
         return;
     }
@@ -433,195 +499,6 @@ function _finishConstructDrop(clientX, clientY) {
     }
     _cTargetLine = null;
 }
-
-function _openFigureParamsModal(lineInfo, clientX, clientY) {
-    const modal = document.getElementById('figureParamsModal');
-    const windowEl = document.getElementById('figureParamsWindow');
-    if (!modal || !windowEl) {
-        if (lineInfo) _placeBoundFigure(lineInfo);
-        else _placeConstructFigure(clientX, clientY);
-        return;
-    }
-
-    let lineLength = 0;
-    let width = CONSTRUCT_FIGURE_SIZE_M;
-    let height = CONSTRUCT_FIGURE_SIZE_M;
-    let start = 0;
-    let end = width;
-    let side = 1;
-
-    if (lineInfo) {
-        const parentItem = lineInfo.item;
-        const hostLine = lineInfo.lineData;
-        lineLength = _getLineBoundFigureLength(parentItem, hostLine.id);
-        if (!Number.isFinite(lineLength) || lineLength <= 0) {
-            showToast('Не вдалося визначити довжину лінії прив’язки', 'error');
-            return;
-        }
-        width = Math.min(CONSTRUCT_FIGURE_SIZE_M, window.normalizeMeasurement(lineLength));
-        if (width <= 0) {
-            showToast('Лінія закоротка для прив’язаної фігури', 'warning');
-            return;
-        }
-        const dropFraction = Number.isFinite(lineInfo.dropFraction)
-            ? Math.max(0, Math.min(1, lineInfo.dropFraction))
-            : 0.5;
-        const center = dropFraction * lineLength;
-        const maxStart = Math.max(0, window.normalizeMeasurement(lineLength - width));
-        start = Math.max(0, Math.min(maxStart, window.normalizeMeasurement(center - width / 2)));
-        end = window.normalizeMeasurement(start + width);
-        side = _getBoundFigureSide(lineInfo);
-    } else {
-        lineLength = 0;
-        start = 0;
-        end = width;
-    }
-
-    document.getElementById('figureParamOffset').value = '0';
-    document.getElementById('figureParamStart').value = start.toFixed(2);
-    document.getElementById('figureParamEnd').value = end.toFixed(2);
-    document.getElementById('figureParamReverse').checked = false;
-    document.getElementById('figureParamWidth').value = width.toFixed(2);
-    document.getElementById('figureParamHeight').value = height.toFixed(2);
-
-    document.getElementById('figureParamStart').disabled = !lineInfo;
-    document.getElementById('figureParamEnd').disabled = !lineInfo;
-    document.getElementById('figureParamReverse').disabled = !lineInfo;
-    document.getElementById('figureParamOffset').disabled = !lineInfo;
-
-    windowEl.style.left = '50%';
-    windowEl.style.top = '50%';
-    windowEl.style.transform = 'translate(-50%, -50%)';
-    modal.style.display = 'block';
-    modal.setAttribute('aria-hidden', 'false');
-
-    _figureParamsContext = { lineInfo, clientX, clientY, lineLength, side };
-    setTimeout(function () {
-        document.getElementById('figureParamWidth').focus();
-    }, 50);
-}
-
-window.cancelFigureParams = function () {
-    const modal = document.getElementById('figureParamsModal');
-    if (modal) {
-        modal.style.display = 'none';
-        modal.setAttribute('aria-hidden', 'true');
-    }
-    _figureParamsContext = null;
-};
-
-window.applyFigureParams = function () {
-    const context = _figureParamsContext;
-    if (!context) return;
-
-    const offset = context.lineInfo
-        ? window.normalizeMeasurement(document.getElementById('figureParamOffset').value)
-        : 0;
-    let start = context.lineInfo
-        ? window.normalizeMeasurement(document.getElementById('figureParamStart').value)
-        : 0;
-    let end = context.lineInfo
-        ? window.normalizeMeasurement(document.getElementById('figureParamEnd').value)
-        : 0;
-    const reverseReference = context.lineInfo
-        ? document.getElementById('figureParamReverse').checked
-        : false;
-    const width = window.normalizeMeasurement(document.getElementById('figureParamWidth').value);
-    const height = window.normalizeMeasurement(document.getElementById('figureParamHeight').value);
-
-    if (!Number.isFinite(width) || width <= 0 ||
-        !Number.isFinite(height) || height <= 0) {
-        showToast('Ширина та висота мають бути більшими за 0', 'warning');
-        return;
-    }
-
-    if (context.lineInfo) {
-        if (!Number.isFinite(offset) || offset < 0 ||
-            !Number.isFinite(start) || !Number.isFinite(end)) {
-            showToast('Введіть коректні параметри прив’язки', 'warning');
-            return;
-        }
-        if (start < 0 || end <= start) {
-            showToast('Початок і кінець прив’язки мають бути коректними', 'warning');
-            return;
-        }
-        end = window.normalizeMeasurement(start + width);
-        if (end > context.lineLength) {
-            showToast('Фігура виходить за межі лінії прив’язки', 'warning');
-            return;
-        }
-    }
-
-    const params = { offset, start, end, reverseReference, width, height, side: context.side };
-    window.cancelFigureParams();
-    if (context.lineInfo) _placeBoundFigure(context.lineInfo, params);
-    else _placeConstructFigure(context.clientX, context.clientY, params);
-};
-
-(function () {
-    const header = document.getElementById('figureParamsHeader');
-    const windowEl = document.getElementById('figureParamsWindow');
-    if (!header || !windowEl) return;
-
-    let dragging = false;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    header.addEventListener('mousedown', function (event) {
-        if (event.button !== 0) return;
-        const rect = windowEl.getBoundingClientRect();
-        dragging = true;
-        offsetX = event.clientX - rect.left;
-        offsetY = event.clientY - rect.top;
-        windowEl.style.left = rect.left + 'px';
-        windowEl.style.top = rect.top + 'px';
-        windowEl.style.transform = 'none';
-        event.preventDefault();
-    });
-
-    document.addEventListener('mousemove', function (event) {
-        if (!dragging) return;
-        const rect = windowEl.getBoundingClientRect();
-        const maxLeft = window.innerWidth - rect.width;
-        const maxTop = window.innerHeight - rect.height;
-        const left = Math.max(0, Math.min(maxLeft, event.clientX - offsetX));
-        const top = Math.max(0, Math.min(maxTop, event.clientY - offsetY));
-        windowEl.style.left = left + 'px';
-        windowEl.style.top = top + 'px';
-    });
-
-    document.addEventListener('mouseup', function () {
-        dragging = false;
-    });
-
-    header.addEventListener('touchstart', function (event) {
-        if (event.touches.length !== 1) return;
-        const touch = event.touches[0];
-        const rect = windowEl.getBoundingClientRect();
-        dragging = true;
-        offsetX = touch.clientX - rect.left;
-        offsetY = touch.clientY - rect.top;
-        windowEl.style.left = rect.left + 'px';
-        windowEl.style.top = rect.top + 'px';
-        windowEl.style.transform = 'none';
-        event.preventDefault();
-    }, { passive: false });
-
-    document.addEventListener('touchmove', function (event) {
-        if (!dragging || event.touches.length !== 1) return;
-        const touch = event.touches[0];
-        const rect = windowEl.getBoundingClientRect();
-        const left = Math.max(0, Math.min(window.innerWidth - rect.width, touch.clientX - offsetX));
-        const top = Math.max(0, Math.min(window.innerHeight - rect.height, touch.clientY - offsetY));
-        windowEl.style.left = left + 'px';
-        windowEl.style.top = top + 'px';
-        event.preventDefault();
-    }, { passive: false });
-
-    document.addEventListener('touchend', function () {
-        dragging = false;
-    });
-})();
 
 function _placeConstructFigure(clientX, clientY, params) {
     if (!_cActiveSvg) return false;
@@ -685,7 +562,7 @@ function _placeConstructFigure(clientX, clientY, params) {
     item._offsetY = 0;
     _redrawItemSvgGroup(item);
     _syncHierarchyToCanvas();
-    selectHierarchyItem(item);
+    _selectDroppedConstructItem(item);
     showToast('Фігуру додано на полотно', 'success');
     return true;
 }
@@ -758,7 +635,7 @@ function _placeBoundFigure(lineInfo, params) {
     _redrawItemSvgGroup(item);
     if (typeof _refreshFigureAreaAncestors === 'function') _refreshFigureAreaAncestors(item);
     _syncHierarchyToCanvas();
-    selectHierarchyItem(item);
+    _selectDroppedConstructItem(item);
     showToast('Фігуру прив’язано до лінії', 'success');
     return true;
 }
@@ -840,6 +717,8 @@ function _placeLineElement(lineInfo, code) {
         if (typeof _redrawItemSvgGroup === 'function') _redrawItemSvgGroup(item);
         if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
         if (typeof renderHierarchy === 'function') renderHierarchy();
+        const elItem = _findDroppedLineElementItem(item, lineData, code, start);
+        _selectDroppedConstructItem(elItem);
         showToast('Комин 1 додано до лінії', 'success');
         return;
     }
@@ -869,6 +748,8 @@ function _placeLineElement(lineInfo, code) {
     if (typeof _redrawItemSvgGroup === 'function') _redrawItemSvgGroup(item);
     if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
     if (typeof renderHierarchy === 'function') renderHierarchy();
+    const elItem = _findDroppedLineElementItem(item, lineData, code, start);
+    _selectDroppedConstructItem(elItem);
     const label = code === 'WI1' ? 'Вікно' : code === 'DV1' ? 'Двері' : 'Отвір';
     showToast(label + ' додано до лінії', 'success');
 }
@@ -946,6 +827,7 @@ function _placeCurvedConstructStrip(lineInfo, thicknessM) {
     G.hierarchyData.push(hierarchyItem);
     if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
     if (typeof renderHierarchy === 'function') renderHierarchy();
+    _selectDroppedConstructItem(hierarchyItem);
     poly.addEventListener('click', function(e) {
         e.stopPropagation();
         if (typeof selectHierarchyItem === 'function') selectHierarchyItem(hierarchyItem);
@@ -1080,6 +962,7 @@ function _placeConstructStrip(lineInfo, thicknessM) {
     G.hierarchyData.push(hierarchyItem);
     if (typeof _syncHierarchyToCanvas === 'function') _syncHierarchyToCanvas();
     if (typeof renderHierarchy === 'function') renderHierarchy();
+    _selectDroppedConstructItem(hierarchyItem);
 
     // Клік → виділення у панелі Елементи
     poly.addEventListener('click', function(e) {
