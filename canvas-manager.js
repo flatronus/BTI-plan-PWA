@@ -157,6 +157,10 @@ window.canvasManager = {
                 retry.readAsText(file);
                 return;
             }
+            if (!String(text || '').trim()) {
+                self.showReadDiagnostics(file);
+                return;
+            }
             try {
                 self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null,
                     'розмір ' + file.size + ' байт, тип «' + (file.type || 'невідомий') + '», ім’я «' + file.name + '»');
@@ -199,6 +203,44 @@ window.canvasManager = {
             reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
             reader.readAsText(file);
         }
+    },
+
+    /** Вікно діагностики: показує, що саме браузер повертає для вибраного файла */
+    showReadDiagnostics(file) {
+        const lines = [
+            'Файл не прочитано.',
+            'Ім’я: ' + file.name,
+            'Тип: ' + (file.type || 'невідомий'),
+            'Розмір за даними браузера: ' + file.size + ' байт',
+            'Браузер: ' + navigator.userAgent
+        ];
+        const measure = [];
+        if (typeof file.arrayBuffer === 'function') {
+            measure.push(file.arrayBuffer().then(function (b) { lines.push('arrayBuffer: ' + b.byteLength + ' байт'); })
+                .catch(function (e) { lines.push('arrayBuffer: помилка ' + (e && e.name)); }));
+        }
+        measure.push(new Promise(function (resolve) {
+            const r = new FileReader();
+            r.onload = function () { lines.push('FileReader: ' + (r.result ? r.result.length : 0) + ' символів'); resolve(); };
+            r.onerror = function () { lines.push('FileReader: помилка ' + (r.error && r.error.name)); resolve(); };
+            r.readAsText(file);
+        }));
+        Promise.all(measure).then(function () {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#fff;border-radius:8px;padding:16px;width:90%;max-width:420px;box-shadow:0 8px 24px rgba(0,0,0,0.3);font-size:14px;';
+            const text = document.createElement('div');
+            text.style.cssText = 'white-space:pre-wrap;word-break:break-word;margin-bottom:12px;';
+            text.textContent = lines.join('\n');
+            const close = document.createElement('button');
+            close.textContent = 'Закрити';
+            close.style.cssText = 'padding:8px 16px;background:#f44336;color:#fff;border:none;border-radius:4px;font-weight:bold;';
+            close.onclick = function () { overlay.remove(); };
+            box.appendChild(text); box.appendChild(close);
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+        });
     },
 
     openFileViaInput() {
