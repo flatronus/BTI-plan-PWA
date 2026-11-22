@@ -154,7 +154,13 @@ window.canvasManager = {
             setTimeout(function () { input.remove(); window._openFileInputRef = null; }, 60000);
             if (!file) { input.remove(); return; }
             const openText = function (text, fallbackTried) {
-                if (!String(text || '').trim() && !fallbackTried) {
+                if (!String(text || '').trim() && !fallbackTried && typeof Response === 'function') {
+                    new Response(file.slice(0, file.size, file.type)).text().then(function (t) {
+                        openText(t, 'response');
+                    }).catch(function () { openText('', 'response'); });
+                    return;
+                }
+                if (!String(text || '').trim() && fallbackTried !== true) {
                     const retry = new FileReader();
                     retry.onload = function () { openText(retry.result, true); };
                     retry.onerror = function () { openText('', true); };
@@ -162,7 +168,8 @@ window.canvasManager = {
                     return;
                 }
                 try {
-                    self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null, file.size);
+                    self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null,
+                        'розмір ' + file.size + ' байт, тип «' + (file.type || 'невідомий') + '», ім’я «' + file.name + '»');
                 } catch (err) {
                     showToast('Помилка відкриття: ' + (err.message || err.name), 'error');
                 }
@@ -203,7 +210,7 @@ window.canvasManager = {
                 reader.readAsText(file);
             }
         }, { once: true });
-        input.addEventListener('cancel', function () { input.remove(); }, { once: true });
+        input.addEventListener('cancel', function () { setTimeout(function () { input.remove(); }, 60000); }, { once: true });
 
         document.body.appendChild(input);
         input.click();
@@ -243,7 +250,7 @@ window.canvasManager = {
         if (!importedSvg) importedSvg = extractSvgFragment();
         if (!importedSvg) {
             showToast(cleanContent.trim().length === 0
-                ? 'Файл порожній (розмір за даними пристрою: ' + (reportedSize == null ? '?' : reportedSize) + ' байт). Збережіть план ще раз.'
+                ? 'Файл не прочитано (' + (reportedSize == null ? '?' : reportedSize) + ').'
                 : 'Невірний SVG-файл', 'error', 6000);
             return;
         }
