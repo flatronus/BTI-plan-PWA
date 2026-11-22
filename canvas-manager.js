@@ -143,6 +143,10 @@ window.canvasManager = {
     handleOpenedFile(file) {
         const self = this;
         if (!file) return;
+        const normalizeFileName = function (name) {
+            const text = String(name || 'Відкритий-файл.svg').replace(/\\/g, '/');
+            return text.substring(text.lastIndexOf('/') + 1) || 'Відкритий-файл.svg';
+        };
         const openText = function (text, fallbackTried) {
             if (!String(text || '').trim() && !fallbackTried && typeof Response === 'function') {
                 new Response(file.slice(0, file.size, file.type)).text().then(function (t) {
@@ -162,14 +166,14 @@ window.canvasManager = {
                 return;
             }
             try {
-                self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null,
-                    'розмір ' + file.size + ' байт, тип «' + (file.type || 'невідомий') + '», ім’я «' + file.name + '»');
+                self.loadSvgFromContent(String(text || ''), normalizeFileName(file.name), null,
+                    'розмір ' + file.size + ' байт, тип «' + (file.type || 'невідомий') + '», ім’я «' + normalizeFileName(file.name) + '»');
             } catch (err) {
                 showToast('Помилка відкриття: ' + (err.message || err.name), 'error');
             }
         };
-        if (typeof file.arrayBuffer === 'function') {
-            file.arrayBuffer().then(function (buffer) {
+
+        const decodeBuffer = function (buffer) {
                 const bytes = new Uint8Array(buffer);
                 let encoding = 'utf-8';
                 if (bytes.length >= 2) {
@@ -191,16 +195,41 @@ window.canvasManager = {
                 } catch (error) {
                     openText(new TextDecoder('utf-8').decode(buffer));
                 }
+        };
+
+        if (typeof file.text === 'function') {
+            file.text().then(function (text) {
+                if (String(text || '').trim()) {
+                    openText(text, true);
+                    return;
+                }
+                throw new Error('Пустий файл');
             }).catch(function () {
+                if (typeof file.arrayBuffer === 'function') {
+                    file.arrayBuffer().then(decodeBuffer).catch(function () {
+                        const reader = new FileReader();
+                        reader.onload = function () { openText(reader.result, true); };
+                        reader.onerror = function () { showReadDiagnostics(file); };
+                        reader.readAsText(file);
+                    });
+                    return;
+                }
                 const reader = new FileReader();
-                reader.onload = function () { openText(reader.result); };
-                reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
+                reader.onload = function () { openText(reader.result, true); };
+                reader.onerror = function () { showReadDiagnostics(file); };
+                reader.readAsText(file);
+            });
+        } else if (typeof file.arrayBuffer === 'function') {
+            file.arrayBuffer().then(decodeBuffer).catch(function () {
+                const reader = new FileReader();
+                reader.onload = function () { openText(reader.result, true); };
+                reader.onerror = function () { showReadDiagnostics(file); };
                 reader.readAsText(file);
             });
         } else {
             const reader = new FileReader();
-            reader.onload = function () { openText(reader.result); };
-            reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
+            reader.onload = function () { openText(reader.result, true); };
+            reader.onerror = function () { showReadDiagnostics(file); };
             reader.readAsText(file);
         }
     },
