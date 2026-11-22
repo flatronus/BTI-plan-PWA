@@ -151,9 +151,16 @@ window.canvasManager = {
             const file = event.target.files && event.target.files[0];
             input.remove();
             if (!file) return;
-            const openText = function (text) {
+            const openText = function (text, fallbackTried) {
+                if (!String(text || '').trim() && !fallbackTried) {
+                    const retry = new FileReader();
+                    retry.onload = function () { openText(retry.result, true); };
+                    retry.onerror = function () { openText('', true); };
+                    retry.readAsText(file);
+                    return;
+                }
                 try {
-                    self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null);
+                    self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null, file.size);
                 } catch (err) {
                     showToast('Помилка відкриття: ' + (err.message || err.name), 'error');
                 }
@@ -200,7 +207,7 @@ window.canvasManager = {
         input.click();
     },
 
-    loadSvgFromContent(svgContent, name, fileHandle) {
+    loadSvgFromContent(svgContent, name, fileHandle, reportedSize) {
         const cleanContent = String(svgContent || '').replace(/^\uFEFF/, '');
         let importedSvg = null;
         const svgMarker = cleanContent.match(/<svg\b[^>]*>/i);
@@ -234,7 +241,7 @@ window.canvasManager = {
         if (!importedSvg) importedSvg = extractSvgFragment();
         if (!importedSvg) {
             showToast(cleanContent.trim().length === 0
-                ? 'Файл порожній (0 байт): його було збережено з помилкою. Збережіть план ще раз.'
+                ? 'Файл порожній (розмір за даними пристрою: ' + (reportedSize == null ? '?' : reportedSize) + ' байт). Збережіть план ще раз.'
                 : 'Невірний SVG-файл', 'error', 6000);
             return;
         }
@@ -552,13 +559,7 @@ window.canvasManager = {
         const doDownload = function (fileName) {
             try {
                 if (!/\.svg$/i.test(fileName)) fileName += '.svg';
-                const url  = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url; link.download = fileName; link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                setTimeout(() => { if (link.parentNode) link.parentNode.removeChild(link); }, 1000);
-                setTimeout(() => URL.revokeObjectURL(url), 120000);
+                window.triggerBlobDownload(blob, fileName);
                 self.renameCanvasFromFile(canvas, fileName);
                 canvas.isDirty = false;
                 showToast(`Файл збережено: ${fileName}`, 'success');
@@ -614,15 +615,7 @@ window.canvasManager = {
 
     downloadBlob(canvas, blob, fileName) {
         const normalizedName = /\.svg$/i.test(fileName) ? fileName : `${fileName}.svg`;
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = normalizedName;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => { if (link.parentNode) link.parentNode.removeChild(link); }, 1000);
-        setTimeout(() => URL.revokeObjectURL(url), 120000);
+        window.triggerBlobDownload(blob, normalizedName);
         this.renameCanvasFromFile(canvas, normalizedName);
         canvas.fileHandle = null;
         canvas.isDirty = false;
@@ -849,6 +842,30 @@ window.safeStringify = function (value) {
         }
         return item;
     });
+};
+
+/* ── Завантаження файла: на Android через data-URL (blob-посилання там дає порожні файли) ── */
+window.triggerBlobDownload = function (blob, fileName) {
+    const run = function (href, revoke) {
+        const link = document.createElement('a');
+        link.href = href; link.download = fileName; link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function () { if (link.parentNode) link.parentNode.removeChild(link); }, 1000);
+        if (revoke) setTimeout(revoke, 120000);
+    };
+    const viaBlobUrl = function () {
+        const url = URL.createObjectURL(blob);
+        run(url, function () { URL.revokeObjectURL(url); });
+    };
+    if (window.G && G.isAndroid && blob.size < 8 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = function () { run(reader.result, null); };
+        reader.onerror = viaBlobUrl;
+        reader.readAsDataURL(blob);
+    } else {
+        viaBlobUrl();
+    }
 };
 
 /* ── Серіалізація SVG для файла (з xmlns) ── */
