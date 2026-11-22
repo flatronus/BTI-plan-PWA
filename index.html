@@ -36,10 +36,13 @@
                             <span class="toolbar-label ml-1 text-sm">Новий</span>
                         </button>
 
-                        <button id="open-canvas-btn" type="button" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="openCanvasFile()" title="Відкрити (Ctrl+O)">
-                            <i class="fas fa-folder-open text-gray-700"></i>
-                            <span class="toolbar-label ml-1 text-sm">Відкрити</span>
-                        </button>
+                        <div class="open-file-wrap">
+                            <button id="open-canvas-btn" type="button" class="toolbar-button px-2 py-1 rounded hover:bg-gray-100 transition" onclick="openCanvasFile()" title="Відкрити (Ctrl+O)">
+                                <i class="fas fa-folder-open text-gray-700"></i>
+                                <span class="toolbar-label ml-1 text-sm">Відкрити</span>
+                            </button>
+                            <input id="open-file-input" class="open-file-overlay" type="file" title="Відкрити (Ctrl+O)" aria-label="Відкрити файл">
+                        </div>
 
                         <div id="save-dropdown" class="save-dropdown">
                             <button id="save-main-btn" class="toolbar-button px-2 py-1 hover:bg-gray-100 transition" onclick="window.saveActiveCanvas && window.saveActiveCanvas()" title="Зберегти (Ctrl+S)">

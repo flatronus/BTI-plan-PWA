@@ -552,3 +552,18 @@ body {
         width: 110px !important;
     }
 }
+
+/* ===== Кнопка «Відкрити»: прозорий input поверх кнопки ===== */
+.open-file-wrap {
+    position: relative;
+    display: inline-flex;
+}
+.open-file-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 0;
+}

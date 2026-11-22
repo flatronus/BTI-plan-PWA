@@ -139,6 +139,68 @@ window.canvasManager = {
         this.openFileViaInput();
     },
 
+    /** Читає вибраний SVG-файл і відкриває його у новій вкладці */
+    handleOpenedFile(file) {
+        const self = this;
+        if (!file) return;
+        const openText = function (text, fallbackTried) {
+            if (!String(text || '').trim() && !fallbackTried && typeof Response === 'function') {
+                new Response(file.slice(0, file.size, file.type)).text().then(function (t) {
+                    openText(t, 'response');
+                }).catch(function () { openText('', 'response'); });
+                return;
+            }
+            if (!String(text || '').trim() && fallbackTried !== true) {
+                const retry = new FileReader();
+                retry.onload = function () { openText(retry.result, true); };
+                retry.onerror = function () { openText('', true); };
+                retry.readAsText(file);
+                return;
+            }
+            try {
+                self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null,
+                    'розмір ' + file.size + ' байт, тип «' + (file.type || 'невідомий') + '», ім’я «' + file.name + '»');
+            } catch (err) {
+                showToast('Помилка відкриття: ' + (err.message || err.name), 'error');
+            }
+        };
+        if (typeof file.arrayBuffer === 'function') {
+            file.arrayBuffer().then(function (buffer) {
+                const bytes = new Uint8Array(buffer);
+                let encoding = 'utf-8';
+                if (bytes.length >= 2) {
+                    if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
+                    else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
+                }
+                if (encoding === 'utf-8' && bytes.length >= 4 &&
+                    bytes[0] === 0x00 && bytes[1] === 0x3C &&
+                    bytes[2] === 0x00 && bytes[3] === 0x3F) {
+                    encoding = 'utf-16le';
+                }
+                if (encoding === 'utf-8' && bytes.length >= 4 &&
+                    bytes[0] === 0x3C && bytes[1] === 0x00 &&
+                    bytes[2] === 0x3F && bytes[3] === 0x00) {
+                    encoding = 'utf-16be';
+                }
+                try {
+                    openText(new TextDecoder(encoding).decode(buffer));
+                } catch (error) {
+                    openText(new TextDecoder('utf-8').decode(buffer));
+                }
+            }).catch(function () {
+                const reader = new FileReader();
+                reader.onload = function () { openText(reader.result); };
+                reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
+                reader.readAsText(file);
+            });
+        } else {
+            const reader = new FileReader();
+            reader.onload = function () { openText(reader.result); };
+            reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
+            reader.readAsText(file);
+        }
+    },
+
     openFileViaInput() {
         const self = this;
         const input = document.createElement('input');
@@ -153,62 +215,7 @@ window.canvasManager = {
             window._openFileInputRef = input;
             setTimeout(function () { input.remove(); window._openFileInputRef = null; }, 60000);
             if (!file) { input.remove(); return; }
-            const openText = function (text, fallbackTried) {
-                if (!String(text || '').trim() && !fallbackTried && typeof Response === 'function') {
-                    new Response(file.slice(0, file.size, file.type)).text().then(function (t) {
-                        openText(t, 'response');
-                    }).catch(function () { openText('', 'response'); });
-                    return;
-                }
-                if (!String(text || '').trim() && fallbackTried !== true) {
-                    const retry = new FileReader();
-                    retry.onload = function () { openText(retry.result, true); };
-                    retry.onerror = function () { openText('', true); };
-                    retry.readAsText(file);
-                    return;
-                }
-                try {
-                    self.loadSvgFromContent(String(text || ''), file.name || 'Відкритий-файл.svg', null,
-                        'розмір ' + file.size + ' байт, тип «' + (file.type || 'невідомий') + '», ім’я «' + file.name + '»');
-                } catch (err) {
-                    showToast('Помилка відкриття: ' + (err.message || err.name), 'error');
-                }
-            };
-            if (typeof file.arrayBuffer === 'function') {
-                file.arrayBuffer().then(function (buffer) {
-                    const bytes = new Uint8Array(buffer);
-                    let encoding = 'utf-8';
-                    if (bytes.length >= 2) {
-                        if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
-                        else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
-                    }
-                    if (encoding === 'utf-8' && bytes.length >= 4 &&
-                        bytes[0] === 0x00 && bytes[1] === 0x3C &&
-                        bytes[2] === 0x00 && bytes[3] === 0x3F) {
-                        encoding = 'utf-16le';
-                    }
-                    if (encoding === 'utf-8' && bytes.length >= 4 &&
-                        bytes[0] === 0x3C && bytes[1] === 0x00 &&
-                        bytes[2] === 0x3F && bytes[3] === 0x00) {
-                        encoding = 'utf-16be';
-                    }
-                    try {
-                        openText(new TextDecoder(encoding).decode(buffer));
-                    } catch (error) {
-                        openText(new TextDecoder('utf-8').decode(buffer));
-                    }
-                }).catch(function () {
-                    const reader = new FileReader();
-                    reader.onload = function () { openText(reader.result); };
-                    reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
-                    reader.readAsText(file);
-                });
-            } else {
-                const reader = new FileReader();
-                reader.onload = function () { openText(reader.result); };
-                reader.onerror = function () { showToast('Не вдалося прочитати SVG-файл', 'error'); };
-                reader.readAsText(file);
-            }
+            self.handleOpenedFile(file);
         }, { once: true });
         input.addEventListener('cancel', function () { setTimeout(function () { input.remove(); }, 60000); }, { once: true });
 
@@ -937,3 +944,14 @@ window.copySvgCode = function () {
 window.closeModal = function () {
     document.getElementById('copyModal').style.display = 'none';
 };
+
+/* ── Постійний input поверх кнопки «Відкрити»: користувач торкається його напряму (надійно на Android) ── */
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('open-file-input');
+    if (!input) return;
+    input.addEventListener('click', function () { input.value = ''; });
+    input.addEventListener('change', function () {
+        const file = input.files && input.files[0];
+        if (file && window.canvasManager) window.canvasManager.handleOpenedFile(file);
+    });
+});
