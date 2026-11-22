@@ -149,8 +149,9 @@ window.canvasManager = {
 
         input.addEventListener('change', function (event) {
             const file = event.target.files && event.target.files[0];
-            input.remove();
-            if (!file) return;
+            window._openFileInputRef = input;
+            setTimeout(function () { input.remove(); window._openFileInputRef = null; }, 60000);
+            if (!file) { input.remove(); return; }
             const openText = function (text, fallbackTried) {
                 if (!String(text || '').trim() && !fallbackTried) {
                     const retry = new FileReader();
