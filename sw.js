@@ -1,5 +1,5 @@
-/* BTIvectorPlans Service Worker v0.8.63 */
-const CACHE_NAME = 'btivector-v0.8.63';
+/* BTIvectorPlans Service Worker v0.8.66 */
+const CACHE_NAME = 'btivector-v0.8.66';
 
 const STATIC_ASSETS = [
     './index.html',
@@ -12,9 +12,6 @@ const STATIC_ASSETS = [
     './shape-editor.js',
     './shape-transfer.js',
     './shape-transform.js',
-    './coord-modal.js',
-    './lines-panel.js',
-    './quick-shape.js',
     './constructs.js',
     './history.js',
     './main.js',

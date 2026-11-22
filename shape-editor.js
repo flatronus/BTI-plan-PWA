@@ -1439,3 +1439,424 @@ window._drawShapeLine = function (x1, y1, x2, y2, length, isClosing, lineData) {
     drawLineDimension(x1, y1, x2, y2, numLen, lineData);
     if (!isClosing) _renderSvgPoint(svg, x2, y2, G.pointCounter + 1);
 };
+
+/* ── Швидкі фігури (об'єднано з quick-shape.js) ── */
+window.openQuickShapeModal = function () {
+    document.getElementById('quickShapeModal').style.display = 'block';
+
+    document.querySelectorAll('input[name="shapeType"]').forEach(radio => {
+        radio.addEventListener('change', function () {
+            const label = document.getElementById('quickDimensionsLabel');
+            if (this.value === 'rectangle') {
+                label.textContent = 'Розміри (ширина висота через пробіл):';
+                document.getElementById('quickDimensionsInput').placeholder = '3.5 4.2';
+            } else {
+                label.textContent = 'Розміри (сторона1 сторона2 сторона3 через пробіл):';
+                document.getElementById('quickDimensionsInput').placeholder = '3.5 4.2 5.0';
+            }
+        });
+    });
+
+    setTimeout(() => document.getElementById('quickDimensionsInput').focus(), 100);
+};
+
+window.closeQuickShapeModal = function () {
+    document.getElementById('quickShapeModal').style.display = 'none';
+    document.getElementById('quickDimensionsInput').value = '';
+};
+
+window.createQuickShape = function () {
+    const shapeType = document.querySelector('input[name="shapeType"]:checked').value;
+    const rawInput  = document.getElementById('quickDimensionsInput').value.trim();
+
+    if (!rawInput) { showToast('Введіть розміри фігури', 'warning'); return; }
+
+    const dims = rawInput.split(/\s+/).map(d => {
+        const n = window.normalizeMeasurement(d);
+        return Number.isFinite(n) ? n : null;
+    }).filter(d => d !== null);
+
+    if (shapeType === 'rectangle') {
+        if (dims.length < 2) { showToast('Для прямокутника потрібно 2 розміри', 'warning'); return; }
+        createRectangle(dims[0], dims[1]);
+    } else if (shapeType === 'triangle') {
+        if (dims.length < 3) { showToast('Для трикутника потрібно 3 розміри', 'warning'); return; }
+        createTriangle(dims[0], dims[1], dims[2]);
+    }
+
+    closeQuickShapeModal();
+};
+
+function _resetShapeState() {
+    G.figureLines = [];
+    G.pendingFreeLines = [];
+    G.lineIdCounter = 1;
+    G.pointCounter = 1;
+    appState.calculatedArea = null;
+    appState.customArea = null;
+
+    resetSvgCanvas(document.getElementById('shapeCanvas'));
+}
+
+window.createRectangle = function (width, height) {
+    _resetShapeState();
+
+    const points = [
+        { x: START_X, y: START_Y, dir: 'right', len: width, closing: false },
+        { x: START_X + width * SCALE, y: START_Y, dir: 'bottom', len: height, closing: false },
+        { x: START_X + width * SCALE, y: START_Y + height * SCALE, dir: 'left', len: width, closing: false },
+        { x: START_X, y: START_Y + height * SCALE, dir: 'top', len: height, closing: true }
+    ];
+
+    const lineDataMeta = { dimensionVisible: true, dimensionRotated: false };
+
+    points.forEach((pt, idx) => {
+        const from = G.shapePoints[G.shapePoints.length - 1];
+        const toX = idx < 3 ? points[idx + 1]?.x ?? START_X : START_X;
+        const toY = idx < 3 ? points[idx + 1]?.y ?? START_Y : START_Y;
+
+        _drawShapeLine(from.x, from.y, toX, toY, pt.len, pt.closing, lineDataMeta);
+
+        if (!pt.closing) {
+            G.pointCounter++;
+            G.shapePoints.push({ x: toX, y: toY, num: G.pointCounter });
+        }
+
+        G.figureLines.push({
+            id: G.lineIdCounter++, from: from.num, to: pt.closing ? 1 : G.pointCounter,
+            direction: 'free', lineType: 'line',
+            elements: [{ type: 'number', value: parseFloat(pt.len) }],
+            code: 'free\nline\n' + parseFloat(pt.len).toFixed(2),
+            length: parseFloat(pt.len), isClosing: pt.closing, isPending: false,
+            dimensionVisible: true, dimensionRotated: false,
+            _cachedEnd: pt.closing ? null : { x: toX, y: toY }
+        });
+    });
+
+    calculateAndDisplayArea();
+    updateLinesList();
+    autoScaleAndCenterFigure();
+};
+
+window.createTriangle = function (side1, side2, side3) {
+    if (side1 + side2 <= side3 || side1 + side3 <= side2 || side2 + side3 <= side1) {
+        showToast('Неможливо створити трикутник (порушена нерівність трикутника)', 'error'); return;
+    }
+
+    _resetShapeState();
+
+    const from1 = G.shapePoints[0];
+    const endX2 = START_X + side1 * SCALE;
+    const endY2 = START_Y;
+    const lineDataMeta = { dimensionVisible: true, dimensionRotated: false };
+
+    _drawShapeLine(from1.x, from1.y, endX2, endY2, side1, false, lineDataMeta);
+    G.pointCounter++;
+    G.shapePoints.push({ x: endX2, y: endY2, num: G.pointCounter });
+    G.figureLines.push({
+        id: G.lineIdCounter++, from: 1, to: 2, direction: 'free', lineType: 'line',
+        elements: [{ type: 'number', value: parseFloat(side1) }],
+        code: 'free\nline\n' + parseFloat(side1).toFixed(2),
+        length: parseFloat(side1), isClosing: false, isPending: false,
+        dimensionVisible: true, dimensionRotated: false,
+        _cachedEnd: { x: endX2, y: endY2 }
+    });
+
+    const cosAngle = (side1 ** 2 + side2 ** 2 - side3 ** 2) / (2 * side1 * side2);
+    const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+    const endX3 = endX2 + Math.cos(angle) * side2 * SCALE;
+    const endY3 = endY2 + Math.sin(angle) * side2 * SCALE;
+
+    const from2 = G.shapePoints[1];
+    _drawShapeLine(from2.x, from2.y, endX3, endY3, side2, false, lineDataMeta);
+    G.pointCounter++;
+    G.shapePoints.push({ x: endX3, y: endY3, num: G.pointCounter });
+    G.figureLines.push({
+        id: G.lineIdCounter++, from: 2, to: 3, direction: 'free', lineType: 'line',
+        elements: [{ type: 'number', value: parseFloat(side2) }],
+        code: 'free\nline\n' + parseFloat(side2).toFixed(2),
+        length: parseFloat(side2), isClosing: false, isPending: false, quadrant: 'bottom',
+        dimensionVisible: true, dimensionRotated: false,
+        _cachedEnd: { x: endX3, y: endY3 }
+    });
+
+    _drawShapeLine(endX3, endY3, START_X, START_Y, side3, true, lineDataMeta);
+    G.figureLines.push({
+        id: G.lineIdCounter++, from: 3, to: 1, direction: 'free', lineType: 'line',
+        elements: [{ type: 'number', value: parseFloat(side3) }],
+        code: 'free\nline\n' + parseFloat(side3).toFixed(2),
+        length: parseFloat(side3), isClosing: true, isPending: false,
+        dimensionVisible: true, dimensionRotated: false,
+        _cachedEnd: null
+    });
+
+    calculateAndDisplayArea();
+    updateLinesList();
+    autoScaleAndCenterFigure();
+};
+
+/* ── Модалки координат (об'єднано з coord-modal.js) ── */
+window.addPoint = function () {
+    document.getElementById('coordInput').value = '';
+    document.getElementById('coordModal').style.display = 'block';
+    appState.editingLineId = null;
+    setTimeout(() => document.getElementById('coordInput').focus(), 100);
+};
+
+window.closeShape = function () {
+    if (G.shapePoints.length < 2) {
+        showToast('Недостатньо точок для замикання фігури', 'warning'); return;
+    }
+    const lastPoint = G.shapePoints[G.shapePoints.length - 1];
+    const firstPoint = G.shapePoints[0];
+    const dx = firstPoint.x - lastPoint.x;
+    const dy = firstPoint.y - lastPoint.y;
+    const distMeters = (Math.sqrt(dx * dx + dy * dy) / SCALE).toFixed(2);
+
+    document.getElementById('coordInput').value = `free\nline\n${distMeters}`;
+    document.getElementById('coordModal').style.display = 'block';
+    appState.isClosingLine = true;
+    appState.editingLineId = null;
+
+    setTimeout(() => {
+        const inp = document.getElementById('coordInput');
+        inp.focus();
+        inp.setSelectionRange(0, 0);
+    }, 100);
+};
+
+window.addDiagonal = function () {
+    if (G.shapePoints.length < 2) {
+        showToast('Для діагоналі потрібно мінімум 2 точки', 'warning');
+        return;
+    }
+    document.getElementById('diagonalModal').style.display = 'block';
+    document.getElementById('diagonalInput').value = '';
+    const pts = G.shapePoints.map(p => p.num).join(', ');
+    document.getElementById('diagonalPointsHint').textContent = 'Наявні точки: ' + pts;
+    setTimeout(() => document.getElementById('diagonalInput').focus(), 100);
+};
+
+window.closeDiagonalModal = function () {
+    document.getElementById('diagonalModal').style.display = 'none';
+    document.getElementById('diagonalInput').value = '';
+};
+
+window.applyDiagonal = function () {
+    const parts = document.getElementById('diagonalInput').value.trim().split(/[\s;]+/);
+    if (parts.length < 3) {
+        showToast('Формат: <точка1> <точка2> <відстань>  наприклад: 1 3 4,52', 'warning');
+        return;
+    }
+    const pt1Num = parseInt(parts[0]);
+    const pt2Num = parseInt(parts[1]);
+    const dist = window.normalizeMeasurement(parts[2]);
+
+    if (isNaN(pt1Num) || isNaN(pt2Num) || isNaN(dist) || dist <= 0) {
+        showToast('Невірний формат. Приклад: 1 3 4,52', 'error');
+        return;
+    }
+    if (pt1Num === pt2Num) {
+        showToast('Точки мають бути різними', 'warning');
+        return;
+    }
+
+    const p1 = G.shapePoints.find(p => p.num === pt1Num);
+    const p2 = G.shapePoints.find(p => p.num === pt2Num);
+    if (!p1 || !p2) {
+        showToast('Точки ' + pt1Num + ' або ' + pt2Num + ' не знайдено', 'error');
+        return;
+    }
+
+    if (!G.diagonals) G.diagonals = [];
+    const existIdx = G.diagonals.findIndex(d =>
+        (d.pt1 === pt1Num && d.pt2 === pt2Num) ||
+        (d.pt1 === pt2Num && d.pt2 === pt1Num)
+    );
+    const diagEntry = { pt1: pt1Num, pt2: pt2Num, dist };
+    if (existIdx !== -1) G.diagonals[existIdx] = diagEntry;
+    else G.diagonals.push(diagEntry);
+
+    try {
+        _applyDiagonalConstraint(pt1Num, pt2Num, dist);
+    } finally {
+        closeDiagonalModal();
+    }
+};
+
+window.closeCoordModal = function () {
+    const modal = document.getElementById('coordModal');
+    const inputEl = document.getElementById('coordInput');
+    const inputText = inputEl ? inputEl.value.trim() : '';
+
+    try {
+        if (inputText) {
+            const parsedData = parseCoordinateInput(inputText);
+            if (parsedData) {
+                if (appState.editingLineId) {
+                    updateExistingLine(appState.editingLineId, parsedData);
+                    appState.editingLineId = null;
+                } else {
+                    drawLineOnCanvas(parsedData);
+                }
+            }
+        } else if (appState.editingLineId) {
+            deleteLineAndFollowing(appState.editingLineId);
+            appState.editingLineId = null;
+            appState.isClosingLine = false;
+        } else {
+            appState.isClosingLine = false;
+        }
+    } catch (err) {
+        console.error('closeCoordModal error:', err);
+        showToast('Помилка: ' + err.message, 'error');
+        appState.editingLineId = null;
+        appState.isClosingLine = false;
+    } finally {
+        if (modal) modal.style.display = 'none';
+        if (inputEl) inputEl.value = '';
+    }
+};
+
+window.cancelCoordModal = function () {
+    appState.editingLineId = null;
+    appState.isClosingLine = false;
+    document.getElementById('coordModal').style.display = 'none';
+    document.getElementById('coordInput').value = '';
+};
+
+window.submitCoords = function () { closeCoordModal(); };
+
+window.setAngle = function (direction) {
+    G.currentAngle = direction;
+    _insertIntoCoordInput(direction);
+};
+
+window.setLineType = function (type) {
+    G.currentLineType = type;
+    const codeMap = { line: 'line', arc: 'curve' };
+    _insertIntoCoordInput(codeMap[type]);
+};
+
+window.selectElement = function (code) {
+    G.selectedElement = code;
+    const coordInput = document.getElementById('coordInput');
+    const cursorPos = coordInput.selectionStart;
+    const textBefore = coordInput.value.substring(0, cursorPos);
+    const textAfter = coordInput.value.substring(cursorPos);
+    const lastChar = textBefore.slice(-1);
+    const prefix = (textBefore && !textBefore.endsWith('\n') && lastChar !== '-' && isNaN(lastChar)) ? '\n' : '';
+    const newText = textBefore + prefix + code + '\n';
+    coordInput.value = newText + textAfter;
+    coordInput.setSelectionRange(newText.length, newText.length);
+    coordInput.focus();
+};
+
+function _insertIntoCoordInput(code) {
+    const coordInput = document.getElementById('coordInput');
+    const cursorPos = coordInput.selectionStart;
+    const textBefore = coordInput.value.substring(0, cursorPos);
+    const textAfter = coordInput.value.substring(cursorPos);
+    const newText = textBefore + (textBefore && !textBefore.endsWith('\n') ? '\n' : '') + code + '\n';
+    coordInput.value = newText + textAfter;
+    coordInput.setSelectionRange(newText.length, newText.length);
+    coordInput.focus();
+}
+
+window.parseCoordinateInput = function (inputText) {
+    const lines = inputText.trim().split('\n').map(l => l.trim()).filter(Boolean);
+
+    if (lines.length < 2) {
+        showToast('Введіть принаймні напрямок та тип лінії', 'warning');
+        return null;
+    }
+
+    const direction = lines[0].toLowerCase();
+    if (!['left', 'right', 'free', 'diagonal'].includes(direction)) {
+        showToast('Невірний напрямок. Використовуйте: right, left', 'error');
+        return null;
+    }
+
+    const startIndex = 1;
+    if (lines.length < startIndex + 1) {
+        showToast('Введіть тип лінії', 'warning');
+        return null;
+    }
+
+    const lineType = lines[startIndex].toLowerCase();
+    if (!['line', 'curve'].includes(lineType)) {
+        showToast('Невірний тип лінії. Використовуйте: line, curve', 'error');
+        return null;
+    }
+
+    const elements = [];
+    const chimneyIndex = lines.findIndex((line, index) =>
+        index > startIndex && line.replace(/^-/, '') === 'KO1'
+    );
+    if (chimneyIndex !== -1) {
+        const parseNumber = value => {
+            const number = window.normalizeMeasurement(value);
+            return Number.isFinite(number) ? number : null;
+        };
+        const numbersBefore = lines.slice(startIndex + 1, chimneyIndex).map(parseNumber);
+        const numbersAfter = lines.slice(chimneyIndex + 1).map(parseNumber);
+        const isOutside = lines[chimneyIndex].startsWith('-');
+        let lineLength, start, end, thickness, offset, trailingStart;
+
+        if (lineType === 'line' && numbersBefore.length === 0) {
+            if (numbersAfter.length < 5 || numbersAfter.slice(0, 5).some(value => value === null)) {
+                showToast('Формат KO1: початок, кінець, товщина, відступ, довжина лінії', 'warning');
+                return null;
+            }
+            [start, end, thickness, offset, lineLength] = numbersAfter;
+            if (start < 0 || end < start || end > lineLength ||
+                thickness <= 0 || offset < 0 || lineLength <= 0) {
+                showToast('KO1: початок і кінець мають бути в межах лінії; товщина має бути більшою за 0', 'warning');
+                return null;
+            }
+            trailingStart = chimneyIndex + 6;
+            elements.push(
+                { type: 'number', value: lineLength },
+                { type: 'number', value: start },
+                { type: 'number', value: end },
+                { type: 'element', value: isOutside ? '-KO1' : 'KO1', thickness, offset, placement: isOutside ? 'outside' : 'inside', lineLength }
+            );
+        } else {
+            const requiredBefore = lineType === 'curve' ? 2 : 1;
+            const requiredAfter = 4;
+            if (numbersBefore.length < requiredBefore ||
+                numbersBefore.slice(0, requiredBefore).some(value => value === null) ||
+                numbersAfter.length < requiredAfter ||
+                numbersAfter.slice(0, requiredAfter).some(value => value === null)) {
+                showToast('Невірні параметри KO1', 'warning');
+                return null;
+            }
+            elements.push(...numbersBefore.slice(0, requiredBefore).map(value => ({ type: 'number', value })));
+            lineLength = numbersBefore[0];
+            [start, end, thickness, offset] = numbersAfter;
+            trailingStart = chimneyIndex + 5;
+            elements.push(
+                { type: 'number', value: start },
+                { type: 'number', value: end },
+                { type: 'element', value: isOutside ? '-KO1' : 'KO1', thickness, offset,
+                    placement: isOutside ? 'outside' : 'inside', lineLength: numbersBefore[0] }
+            );
+        }
+        for (let i = trailingStart; i < lines.length; i++) {
+            const number = parseNumber(lines[i]);
+            elements.push(number === null
+                ? { type: 'element', value: lines[i] }
+                : { type: 'number', value: number });
+        }
+        return { direction, lineType, elements, lineLength };
+    }
+
+    for (let i = startIndex + 1; i < lines.length; i++) {
+        const numValue = window.normalizeMeasurement(lines[i]);
+        elements.push(!isNaN(numValue)
+            ? { type: 'number', value: numValue }
+            : { type: 'element', value: lines[i] });
+    }
+
+    return { direction, lineType, elements };
+};
