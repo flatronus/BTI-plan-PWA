@@ -143,8 +143,9 @@ window.canvasManager = {
         const self = this;
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.svg,image/svg+xml,text/xml,application/xml';
-        input.setAttribute('accept', input.accept);
+        // Без фільтра accept: на Android тип image/svg+xml відкриває фото-вибірник, який віддає SVG як порожній файл
+        input.accept = '';
+        input.removeAttribute('accept');
         input.style.display = 'none';
 
         input.addEventListener('change', function (event) {
