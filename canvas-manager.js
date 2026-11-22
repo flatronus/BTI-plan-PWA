@@ -243,6 +243,10 @@ window.canvasManager = {
             'Розмір за даними браузера: ' + file.size + ' байт',
             'Браузер: ' + navigator.userAgent
         ];
+        if (file.size === 0) {
+            lines.push('Причина: Chrome передав порожній об’єкт File. Програма не може отримати вміст з нього.');
+            lines.push('Рекомендація: обирайте файл у режимі «Файли» і виберіть саме .svg, а не в галереї/фото.');
+        }
         const measure = [];
         if (typeof file.arrayBuffer === 'function') {
             measure.push(file.arrayBuffer().then(function (b) { lines.push('arrayBuffer: ' + b.byteLength + ' байт'); })
@@ -276,9 +280,8 @@ window.canvasManager = {
         const self = this;
         const input = document.createElement('input');
         input.type = 'file';
-        // Без фільтра accept: на Android тип image/svg+xml відкриває фото-вибірник, який віддає SVG як порожній файл
-        input.accept = '';
-        input.removeAttribute('accept');
+        // Розширення змушує Android обирати документ із файлового провайдера, а не фото-медіа.
+        input.accept = '.svg';
         input.style.display = 'none';
 
         input.addEventListener('change', function (event) {
