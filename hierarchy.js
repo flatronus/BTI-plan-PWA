@@ -1079,6 +1079,7 @@ window.renderProperties = function (item) {
             inp.onfocus = function() { inp.style.background = '#eff6ff'; inp.style.outline = '1px solid #2196F3'; };
             inp.onblur  = function() { inp.style.background = 'transparent'; inp.style.outline = 'none'; };
             inp.onchange = function() { cp.value = inp.value; };
+            _applyTouchSelection(inp);
 
             const delBtn = document.createElement('button');
             delBtn.textContent = '✕';
@@ -1217,11 +1218,13 @@ function _showAddCustomPropDialog(item, body) {
     nameInp.type = 'text';
     nameInp.placeholder = 'Назва властивості';
     nameInp.style.cssText = 'flex:1;font-size:11px;padding:3px 5px;border:1px solid #93c5fd;border-radius:3px;';
+    _applyTouchSelection(nameInp);
 
     const valInp = document.createElement('input');
     valInp.type = 'text';
     valInp.placeholder = 'Значення';
     valInp.style.cssText = 'flex:1;font-size:11px;padding:3px 5px;border:1px solid #93c5fd;border-radius:3px;';
+    _applyTouchSelection(valInp);
 
     row1.appendChild(nameInp); row1.appendChild(valInp);
 
@@ -1321,6 +1324,7 @@ function _makeControl(prop, val, item) {
         inp.style.cssText = BASE_STYLE;
         inp.onchange = function() { _propSet(item, prop.key, inp.value.trim()); };
         _applyFocusStyle(inp);
+        _applyTouchSelection(inp);
         return inp;
     }
 
@@ -1387,6 +1391,7 @@ function _makeControl(prop, val, item) {
         };
         inp.onchange = commitValue;
         _applyFocusStyle(inp);
+        _applyTouchSelection(inp);
         return inp;
     }
 
@@ -1404,6 +1409,40 @@ function _applyFocusStyle(el) {
         el.style.background = 'transparent';
         el.style.outline = 'none';
     };
+}
+
+function _applyTouchSelection(el) {
+    el.addEventListener('blur', function() {
+        el.removeAttribute('data-touch-mode');
+        if (el.getAttribute('data-touch-was-number') === 'true') {
+            el.type = 'number';
+            el.removeAttribute('data-touch-was-number');
+        }
+    });
+
+    el.addEventListener('pointerdown', function(event) {
+        if (event.pointerType !== 'touch') return;
+
+        const touchMode = el.getAttribute('data-touch-mode');
+        if (touchMode === 'caret') return;
+        if (touchMode === 'select-all') {
+            el.setAttribute('data-touch-mode', 'caret');
+            return;
+        }
+
+        event.preventDefault();
+        el.focus();
+        if (el.type === 'number') {
+            el.type = 'text';
+            el.setAttribute('data-touch-was-number', 'true');
+        }
+        try {
+            el.setSelectionRange(0, el.value.length);
+        } catch (error) {
+            el.select();
+        }
+        el.setAttribute('data-touch-mode', 'select-all');
+    });
 }
 
 function _makeGroupHeader(text) {
