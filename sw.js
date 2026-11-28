@@ -1,5 +1,5 @@
-/* BTIvectorPlans Service Worker v0.8.70 */
-const CACHE_NAME = 'btivector-v0.8.70';
+/* BTIvectorPlans Service Worker v0.8.71 */
+const CACHE_NAME = 'btivector-v0.8.71';
 
 const STATIC_ASSETS = [
     './index.html',
@@ -16,8 +16,8 @@ const STATIC_ASSETS = [
     './history.js',
     './main.js',
     './manifest.json',
-    './icons/icon-192.png',
-    './icons/icon-512.png',
+    './icon-192.png',
+    './icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {

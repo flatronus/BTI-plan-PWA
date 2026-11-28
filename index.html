@@ -10,10 +10,10 @@
     <meta name="theme-color" content="#2563eb">
     <title>BTI Vector Plans</title>
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="app.css?v=0.8.70">
+    <link rel="stylesheet" href="app.css?v=0.8.71">
 </head>
 <body class="bg-gray-100">
 
@@ -24,7 +24,7 @@
                 <!-- Логотип -->
                 <div class="flex items-center">
                     <i class="fas fa-paint-brush text-blue-600 text-2xl"></i>
-                    <span id="app-version" class="app-version" title="Версія застосунку">v0.8.70</span>
+                    <span id="app-version" class="app-version" title="Версія застосунку">v0.8.71</span>
                 </div>
 
                 <!-- Панель інструментів -->
@@ -437,17 +437,17 @@
     </div>
 
     <!-- Скрипти: порядок підключення важливий -->
-    <script src="core-state.js?v=0.8.70"></script>      <!-- 1. Константи, стан і toast -->
-    <script src="svg-primitives.js?v=0.8.70"></script>  <!-- 2. SVG-хелпери -->
-    <script src="elements-on-line.js?v=0.8.70"></script><!-- 3. WI1 та ін. -->
-    <script src="canvas-manager.js?v=0.8.70"></script>  <!-- 4. canvasManager, zoom, save -->
-    <script src="hierarchy.js?v=0.8.70"></script>       <!-- 5. Дерево елементів -->
-    <script src="shape-editor.js?v=0.8.70"></script>    <!-- 6. Малювання фігур -->
-    <script src="shape-transfer.js?v=0.8.70"></script>  <!-- 7. Перенос на головне полотно -->
-    <script src="shape-transform.js?v=0.8.70"></script> <!-- 8. Переміщення та обертання -->
-    <script src="constructs.js?v=0.8.70"></script>      <!-- 9. Конструктиви (полоски) -->
-    <script src="history.js?v=0.8.70"></script>         <!-- 10. Скасування й повторення -->
-    <script src="main.js?v=0.8.70"></script>            <!-- 11. Ініціалізація (останній) -->
+    <script src="core-state.js?v=0.8.71"></script>      <!-- 1. Константи, стан і toast -->
+    <script src="svg-primitives.js?v=0.8.71"></script>  <!-- 2. SVG-хелпери -->
+    <script src="elements-on-line.js?v=0.8.71"></script><!-- 3. WI1 та ін. -->
+    <script src="canvas-manager.js?v=0.8.71"></script>  <!-- 4. canvasManager, zoom, save -->
+    <script src="hierarchy.js?v=0.8.71"></script>       <!-- 5. Дерево елементів -->
+    <script src="shape-editor.js?v=0.8.71"></script>    <!-- 6. Малювання фігур -->
+    <script src="shape-transfer.js?v=0.8.71"></script>  <!-- 7. Перенос на головне полотно -->
+    <script src="shape-transform.js?v=0.8.71"></script> <!-- 8. Переміщення та обертання -->
+    <script src="constructs.js?v=0.8.71"></script>      <!-- 9. Конструктиви (полоски) -->
+    <script src="history.js?v=0.8.71"></script>         <!-- 10. Скасування й повторення -->
+    <script src="main.js?v=0.8.71"></script>            <!-- 11. Ініціалізація (останній) -->
 
     <!-- PWA: реєстрація Service Worker -->
     <script>
@@ -462,8 +462,8 @@
                     });
 
                 navigator.serviceWorker.addEventListener('controllerchange', function () {
-                    if (sessionStorage.getItem('bti-sw-reloaded') === 'v0.8.70') return;
-                    sessionStorage.setItem('bti-sw-reloaded', 'v0.8.70');
+                    if (sessionStorage.getItem('bti-sw-reloaded') === 'v0.8.71') return;
+                    sessionStorage.setItem('bti-sw-reloaded', 'v0.8.71');
                     window.location.reload();
                 });
             });
