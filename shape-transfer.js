@@ -365,6 +365,10 @@ window.transferFigureToMainCanvas = function () {
             existingItem.type        = G.isBuilding ? 'building' : 'room';
             existingItem.area        = appState.customArea || appState.calculatedArea;
             if (existingItem.constructFigure) {
+                if ((existingItem.constructType || 'rectangle') !== 'rectangle') {
+                    // Нестандартні конструктивні фігури зберігають власні параметри;
+                    // редагування форми в цьому блоці не змінює тип і розміри.
+                } else {
                 const points = existingItem.shapePoints.filter(function(point) { return !point.isTemp; });
                 if (points.length === 4) {
                     const vectors = points.map(function(point, index) {
@@ -390,6 +394,7 @@ window.transferFigureToMainCanvas = function () {
                     }
                 } else {
                     existingItem.constructFigure = false;
+                }
                 }
             }
             // Оновлюємо збережений offset (міг бути null для старих елементів)
@@ -700,11 +705,42 @@ window._buildLineBoundFigureGeometry = function (parentItem, binding, height) {
 }
 
 window._refreshLineBoundFigure = function (childItem, parentItem) {
-    const geometry = window._buildLineBoundFigureGeometry(
-        parentItem,
-        childItem._figureBinding,
-        Number(childItem.constructHeight)
-    );
+    const type = childItem.constructType || 'rectangle';
+    let geometry;
+    if (type === 'rectangle') {
+        geometry = window._buildLineBoundFigureGeometry(
+            parentItem,
+            childItem._figureBinding,
+            Number(childItem.constructHeight)
+        );
+    } else {
+        const values = {
+            sideA: Number(childItem.constructSideA),
+            sideB: Number(childItem.constructSideB),
+            sideC: Number(childItem.constructSideC),
+            top: Number(childItem.constructTop),
+            bottom: Number(childItem.constructBottom),
+            height: Number(childItem.constructHeight),
+            chord: Number(childItem.constructChord),
+            sagitta: Number(childItem.constructSagitta)
+        };
+        const boundGeometry = typeof window._buildBoundConstructFigureGeometry === 'function'
+            ? window._buildBoundConstructFigureGeometry(
+                parentItem, childItem._figureBinding, type, values
+            )
+            : null;
+        if (boundGeometry) {
+            geometry = {
+                points: boundGeometry.points,
+                lines: boundGeometry.lines,
+                width: type === 'triangle' ? values.sideA
+                    : type === 'trapezoid' ? values.bottom
+                    : type === 'semicircle' ? values.chord
+                    : values.sideA,
+                height: Number(childItem.constructHeight)
+            };
+        }
+    }
     if (!geometry) return false;
 
     geometry.lines.forEach(function(lineData) {

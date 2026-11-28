@@ -17,7 +17,9 @@ const METER_PROPERTY_KEYS = new Set([
     'elStart', 'elEnd', 'elLength', '_thickness', 'elOffset',
     'constructThickness', 'constructLength',
     'figureBindingStart', 'figureBindingEnd', 'figureBindingOffset',
-    'constructWidth', 'constructHeight'
+    'constructWidth', 'constructHeight',
+    'constructSideA', 'constructSideB', 'constructSideC',
+    'constructTop', 'constructBottom', 'constructChord', 'constructSagitta'
 ]);
 
 /**
@@ -82,8 +84,16 @@ window.addToHierarchy = function (shapeData) {
         shapePoints: JSON.parse(JSON.stringify(shapeData.shapePoints)),
         svgGroup:   shapeData.svgGroup,
         constructFigure: shapeData.constructFigure === true,
+        constructType: shapeData.constructType || (shapeData.constructFigure ? 'rectangle' : null),
         constructWidth: shapeData.constructWidth,
         constructHeight: shapeData.constructHeight,
+        constructSideA: shapeData.constructSideA,
+        constructSideB: shapeData.constructSideB,
+        constructSideC: shapeData.constructSideC,
+        constructTop: shapeData.constructTop,
+        constructBottom: shapeData.constructBottom,
+        constructChord: shapeData.constructChord,
+        constructSagitta: shapeData.constructSagitta,
         children:   [],
         expanded:   true,
         parentId:   shapeData.parentId || null
@@ -346,6 +356,13 @@ function _propGet(item, key) {
     }
     if (key === 'constructWidth') return item.constructWidth ?? 3;
     if (key === 'constructHeight') return item.constructHeight ?? 3;
+    if (key === 'constructSideA') return item.constructSideA ?? 3;
+    if (key === 'constructSideB') return item.constructSideB ?? 3;
+    if (key === 'constructSideC') return item.constructSideC ?? 3;
+    if (key === 'constructTop') return item.constructTop ?? 3;
+    if (key === 'constructBottom') return item.constructBottom ?? 3;
+    if (key === 'constructChord') return item.constructChord ?? 3;
+    if (key === 'constructSagitta') return item.constructSagitta ?? 1.5;
     const sideDimension = key.match(/^constructLine(\d+)(Visible|Rotated)$/);
     if (sideDimension) {
         const line = (item.figureLines || []).find(function(lineData) {
@@ -569,6 +586,20 @@ function _propSet(item, key, value) {
         _redrawItemSvgGroup(item);
         return;
     }
+    if (item.constructFigure && [
+        'constructSideA', 'constructSideB', 'constructSideC',
+        'constructTop', 'constructBottom', 'constructChord', 'constructSagitta'
+    ].includes(key)) {
+        const dimension = window.normalizeMeasurement(value);
+        if (!Number.isFinite(dimension) || dimension <= 0) {
+            showToast('Розмір фігури має бути більшим за 0', 'warning');
+            renderProperties(item);
+            return;
+        }
+        item[key] = dimension;
+        _resizeConstructFigure(item);
+        return;
+    }
     if (item.constructFigure && (key === 'constructWidth' || key === 'constructHeight')) {
         const dimension = window.normalizeMeasurement(value);
         if (!Number.isFinite(dimension) || dimension <= 0) {
@@ -702,60 +733,58 @@ function _setLineBoundFigureProperty(item, key, value) {
 }
 
 function _resizeConstructFigure(item) {
+    const type = item.constructType || 'rectangle';
+    if (item._figureBinding && typeof _findParentItemById === 'function') {
+        const parent = _findParentItemById(item.id);
+        if (parent && typeof _refreshLineBoundFigure === 'function') {
+            const baseSize = type === 'triangle' ? Number(item.constructSideA)
+                : type === 'trapezoid' ? Number(item.constructBottom)
+                : type === 'semicircle' ? Number(item.constructChord)
+                : Number(item.constructSideA);
+            if (Number.isFinite(baseSize) && baseSize > 0) {
+                item._figureBinding.end = Number(item._figureBinding.start) + baseSize;
+                item.constructWidth = baseSize;
+            }
+            if (_refreshLineBoundFigure(item, parent)) {
+                _refreshFigureAreaAncestors(item);
+                _syncHierarchyToCanvas();
+                renderHierarchy();
+                renderProperties(item);
+            }
+            return;
+        }
+    }
     const points = item.shapePoints || [];
-    if (points.length !== 4 || (item.figureLines || []).length !== 4) {
-        showToast('Редагування розмірів доступне лише для прямокутної фігури', 'error');
+    const centerX = points.length
+        ? points.reduce(function(sum, point) { return sum + point.x; }, 0) / points.length
+        : 0;
+    const centerY = points.length
+        ? points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length
+        : 0;
+
+    const values = type === 'rectangle'
+        ? { width: Number(item.constructWidth), height: Number(item.constructHeight) }
+        : type === 'triangle'
+            ? { sideA: Number(item.constructSideA), sideB: Number(item.constructSideB), sideC: Number(item.constructSideC) }
+            : type === 'trapezoid'
+                ? { top: Number(item.constructTop), bottom: Number(item.constructBottom), height: Number(item.constructHeight) }
+                : type === 'semicircle'
+                    ? { chord: Number(item.constructChord), sagitta: Number(item.constructSagitta) }
+                    : { sideA: Number(item.constructSideA), sideB: Number(item.constructSideB) };
+
+    const geometry = typeof window._buildConstructFigureGeometry === 'function'
+        ? window._buildConstructFigureGeometry(type, values, { x: centerX, y: centerY })
+        : null;
+    if (!geometry) {
+        showToast('Некоректні розміри фігури', 'warning');
+        renderProperties(item);
         return;
     }
-    const centerX = points.reduce(function(sum, point) { return sum + point.x; }, 0) / points.length;
-    const centerY = points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length;
-    const width = Number(item.constructWidth);
-    const height = Number(item.constructHeight);
-    const halfWidth = width * SCALE / 2;
-    const halfHeight = height * SCALE / 2;
-    item.shapePoints = [
-        { x: centerX - halfWidth, y: centerY - halfHeight, num: 1 },
-        { x: centerX + halfWidth, y: centerY - halfHeight, num: 2 },
-        { x: centerX + halfWidth, y: centerY + halfHeight, num: 3 },
-        { x: centerX - halfWidth, y: centerY + halfHeight, num: 4 }
-    ];
-    const lengths = [width, height, width, height];
-    item.figureLines.forEach(function(lineData, index) {
-        const length = lengths[index];
-        lineData.length = length;
-        const elements = lineData.elements || (lineData.elements = []);
-        for (let elementIndex = 0; elementIndex < elements.length - 2; elementIndex++) {
-            if (elements[elementIndex]?.type !== 'number' ||
-                elements[elementIndex + 1]?.type !== 'number' ||
-                elements[elementIndex + 2]?.type !== 'element') continue;
-            const elementLength = Math.min(
-                length,
-                Math.max(0, elements[elementIndex + 1].value - elements[elementIndex].value)
-            );
-            const elementStart = Math.min(elements[elementIndex].value, length - elementLength);
-            elements[elementIndex].value = elementStart;
-            elements[elementIndex + 1].value = elementStart + elementLength;
-            if (String(elements[elementIndex + 2].value).replace(/^-/, '') === 'KO1') {
-                elements[elementIndex + 2].lineLength = length;
-            }
-            elementIndex += 2;
-        }
-        let lengthElement = null;
-        for (let elementIndex = elements.length - 1; elementIndex >= 0; elementIndex--) {
-            if (elements[elementIndex].type === 'number') {
-                lengthElement = elements[elementIndex];
-                break;
-            }
-        }
-        if (lengthElement) lengthElement.value = length;
-        else elements.push({ type: 'number', value: length });
-        lineData.code = typeof _rebuildLineCode === 'function'
-            ? _rebuildLineCode(elements, lineData.direction, lineData.lineType)
-            : lineData.direction + '\n' + lineData.lineType + '\n' + length.toFixed(2);
-    });
+    item.shapePoints = geometry.points;
+    item.figureLines = geometry.lines;
     item.area = typeof calculateFigureArea === 'function'
         ? calculateFigureArea(item.figureLines, item.shapePoints).toFixed(1)
-        : (width * height).toFixed(1);
+        : '0';
     const offsetX = item._anchorOnCanvas ? item._anchorOnCanvas.x - START_X : (item._offsetX || 0);
     const offsetY = item._anchorOnCanvas ? item._anchorOnCanvas.y - START_Y : (item._offsetY || 0);
     _redrawItemSvgGroup(item);
@@ -949,12 +978,46 @@ window.renderProperties = function (item) {
         { key: 'figureBindingOffset', label: 'Відступ від лінії (м)', type: 'number', readOnly: false },
         { key: 'figureBindingReverse', label: 'Відлік від кінця лінії', type: 'bool', readOnly: false }
     ] : [];
-    const figureSchema = item.constructFigure ? [
-        { group: item._figureBinding ? 'Розміри прив’язаної групи' : 'Розміри прямокутника' },
-        { key: 'constructWidth', label: 'Ширина (м)', type: 'number', readOnly: false },
-        { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false },
-        { type: 'constructDimensionTable' }
-    ] : [];
+    let figureSchema = [];
+    if (item.constructFigure) {
+        const type = item.constructType || 'rectangle';
+        let dimensions;
+        let groupTitle;
+        if (type === 'triangle') {
+            groupTitle = 'Розміри трикутника';
+            dimensions = [
+                { key: 'constructSideA', label: 'Сторона 1 (основа) (м)', type: 'number', readOnly: false },
+                { key: 'constructSideB', label: 'Сторона 2 (м)', type: 'number', readOnly: false },
+                { key: 'constructSideC', label: 'Сторона 3 (м)', type: 'number', readOnly: false }
+            ];
+        } else if (type === 'trapezoid') {
+            groupTitle = 'Розміри трапеції';
+            dimensions = [
+                { key: 'constructTop', label: 'Верхній розмір (м)', type: 'number', readOnly: false },
+                { key: 'constructBottom', label: 'Нижній розмір (м)', type: 'number', readOnly: false },
+                { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false }
+            ];
+        } else if (type === 'semicircle') {
+            groupTitle = 'Розміри півкруга';
+            dimensions = [
+                { key: 'constructChord', label: 'Хорда (м)', type: 'number', readOnly: false },
+                { key: 'constructSagitta', label: 'Серединний перпендикуляр до хорди (м)', type: 'number', readOnly: false }
+            ];
+        } else if (type === 'quarter') {
+            groupTitle = 'Розміри четвертькруга';
+            dimensions = [
+                { key: 'constructSideA', label: 'Перша сторона четверті (м)', type: 'number', readOnly: false },
+                { key: 'constructSideB', label: 'Друга сторона четверті (м)', type: 'number', readOnly: false }
+            ];
+        } else {
+            groupTitle = item._figureBinding ? 'Розміри прив’язаної групи' : 'Розміри прямокутника';
+            dimensions = [
+                { key: 'constructWidth', label: 'Ширина (м)', type: 'number', readOnly: false },
+                { key: 'constructHeight', label: 'Висота (м)', type: 'number', readOnly: false }
+            ];
+        }
+        figureSchema = [{ group: groupTitle }, ...dimensions, { type: 'constructDimensionTable' }];
+    }
     if (item.constructFigure) {
         const remainingSectionsIndex = visibleSchema.findIndex(function(prop) {
             return ['Геометрія', 'Позиція', 'Відображення'].includes(prop.group);
@@ -972,7 +1035,17 @@ window.renderProperties = function (item) {
         'padding:4px 8px;display:flex;align-items:center;justify-content:space-between;',
         'border-bottom:2px solid #1e3a8a;',
     ].join('');
-    const typeIcon = item.constructFigure ? '▭' : item.type === 'building' ? '🏢' : item.type === 'element' ? '🪟' : item.type === 'contour' ? '⬡' : item.type === 'construct' ? '▬' : '🚪';
+    const typeIcon = item.constructFigure
+        ? (item.constructType === 'triangle' ? '△'
+            : item.constructType === 'trapezoid' ? '▱'
+            : item.constructType === 'semicircle' ? '◒'
+            : item.constructType === 'quarter' ? '◔'
+            : '▭')
+        : item.type === 'building' ? '🏢'
+            : item.type === 'element' ? '🪟'
+            : item.type === 'contour' ? '⬡'
+            : item.type === 'construct' ? '▬'
+            : '🚪';
     const titleText = document.createElement('span');
     titleText.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     titleText.textContent = typeIcon + ' ' + (item.roomNumber || item.name || 'Без назви');

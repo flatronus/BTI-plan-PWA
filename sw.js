@@ -1,5 +1,5 @@
-/* BTIvectorPlans Service Worker v0.8.72 */
-const CACHE_NAME = 'btivector-v0.8.72';
+/* BTIvectorPlans Service Worker v0.8.75 */
+const CACHE_NAME = 'btivector-v0.8.75';
 
 const STATIC_ASSETS = [
     './index.html',

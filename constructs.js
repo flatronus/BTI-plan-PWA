@@ -29,7 +29,11 @@ window.initConstructsPanel = function () {
     body.appendChild(_makeDoorStrip());
     body.appendChild(_makeOpeningStrip());
     body.appendChild(_makeElementStrip('Комин 1', 'KO1', 'chimney'));
-    body.appendChild(_makeFigureStrip());
+    body.appendChild(_makeFigureStrip('Прямокутник', 'rectangle'));
+    body.appendChild(_makeFigureStrip('Трикутник', 'triangle'));
+    body.appendChild(_makeFigureStrip('Трапеція', 'trapezoid'));
+    body.appendChild(_makeFigureStrip('Півкруг', 'semicircle'));
+    body.appendChild(_makeFigureStrip('Четвертькруг', 'quarter'));
 };
 
 /** Будує drag-джерело полоски */
@@ -149,7 +153,7 @@ function _makeElementStrip(labelText, code, dragType) {
     return wrap;
 }
 
-function _makeFigureStrip() {
+function _makeFigureStrip(labelText, figureType) {
     const wrap = document.createElement('div');
     wrap.style.cssText = [
         'display:flex;flex-direction:column;align-items:center;gap:4px;',
@@ -157,7 +161,7 @@ function _makeFigureStrip() {
         'background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;',
         'cursor:grab;user-select:none;',
     ].join('');
-    wrap.title = 'Перетягніть прямокутник на полотно або лінію фігури';
+    wrap.title = 'Перетягніть ' + labelText.toLowerCase() + ' на полотно або лінію фігури';
 
     const preview = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     preview.setAttribute('width', '80');
@@ -165,29 +169,48 @@ function _makeFigureStrip() {
     preview.setAttribute('viewBox', '0 0 80 36');
     preview.style.border = '1px solid #d1d5db';
 
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', '21');
-    rect.setAttribute('y', '5');
-    rect.setAttribute('width', '38');
-    rect.setAttribute('height', '26');
-    rect.setAttribute('fill', '#dbeafe');
-    rect.setAttribute('stroke', '#2563eb');
-    preview.appendChild(rect);
+    if (figureType === 'rectangle') {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', '21'); rect.setAttribute('y', '5');
+        rect.setAttribute('width', '38'); rect.setAttribute('height', '26');
+        rect.setAttribute('fill', '#dbeafe'); rect.setAttribute('stroke', '#2563eb');
+        preview.appendChild(rect);
+    } else if (figureType === 'triangle') {
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', '40,5 67,31 13,31');
+        poly.setAttribute('fill', '#dbeafe'); poly.setAttribute('stroke', '#2563eb');
+        preview.appendChild(poly);
+    } else if (figureType === 'trapezoid') {
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', '13,31 67,31 53,7 13,7');
+        poly.setAttribute('fill', '#dbeafe'); poly.setAttribute('stroke', '#2563eb');
+        preview.appendChild(poly);
+    } else if (figureType === 'semicircle') {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M 13 31 A 27 27 0 0 1 67 31');
+        path.setAttribute('fill', '#dbeafe'); path.setAttribute('stroke', '#2563eb');
+        preview.appendChild(path);
+    } else if (figureType === 'quarter') {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M 13 31 L 13 7 A 24 24 0 0 1 37 31 Z');
+        path.setAttribute('fill', '#dbeafe'); path.setAttribute('stroke', '#2563eb');
+        preview.appendChild(path);
+    }
     wrap.appendChild(preview);
 
     const label = document.createElement('span');
     label.style.cssText = 'font-size:11px;color:#1d4ed8;font-weight:600;';
-    label.textContent = 'Фігура';
+    label.textContent = labelText;
     wrap.appendChild(label);
 
     wrap.addEventListener('mousedown', function(e) {
         if (e.button !== 0) return;
-        _startConstructDrag(e.clientX, e.clientY, CONSTRUCT_THICKNESS_M, 'figure');
+        _startConstructDrag(e.clientX, e.clientY, CONSTRUCT_THICKNESS_M, 'figure-' + figureType);
     });
     wrap.addEventListener('touchstart', function(e) {
         if (e.touches.length !== 1) return;
         e.preventDefault();
-        _startConstructDrag(e.touches[0].clientX, e.touches[0].clientY, CONSTRUCT_THICKNESS_M, 'figure');
+        _startConstructDrag(e.touches[0].clientX, e.touches[0].clientY, CONSTRUCT_THICKNESS_M, 'figure-' + figureType);
     }, { passive: false });
 
     return wrap;
@@ -280,7 +303,7 @@ function _startConstructDrag(clientX, clientY, thicknessM, dragType) {
 
     // Створюємо привид (overlay div — не SVG, щоб слідкувати за курсором)
     _cGhost = document.createElement('div');
-    const isFigure = _cDragType === 'figure';
+    const isFigure = _cDragType === 'figure' || _cDragType.startsWith('figure-');
     _cGhost.style.cssText = [
         'position:fixed;pointer-events:none;z-index:9000;',
         'width:60px;height:' + (isFigure ? '60px' : '8px') + ';',
@@ -481,9 +504,12 @@ function _finishConstructDrop(clientX, clientY) {
     document.removeEventListener('touchmove', _onConstructTouchMove);
     document.removeEventListener('touchend',  _onConstructTouchEnd);
 
-    if (_cDragType === 'figure') {
-        if (_cTargetLine) _placeBoundFigure(_cTargetLine);
-        else _placeConstructFigure(clientX, clientY);
+    if (_cDragType === 'figure' || _cDragType.startsWith('figure-')) {
+        const figureType = _cDragType === 'figure'
+            ? 'rectangle'
+            : _cDragType.substring('figure-'.length);
+        if (_cTargetLine) _placeBoundFigure(_cTargetLine, null, figureType);
+        else _placeConstructFigure(clientX, clientY, null, figureType);
         _cTargetLine = null;
         return;
     }
@@ -500,7 +526,265 @@ function _finishConstructDrop(clientX, clientY) {
     _cTargetLine = null;
 }
 
-function _placeConstructFigure(clientX, clientY, params) {
+window._buildConstructFigureGeometry = function (figureType, values, center) {
+    const cx = center?.x || 0;
+    const cy = center?.y || 0;
+    const type = figureType === 'rectangle' ? 'rectangle' : figureType;
+
+    if (type === 'rectangle') {
+        const width = Number(values.width);
+        const height = Number(values.height);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+        const halfWidth = width * SCALE / 2;
+        const halfHeight = height * SCALE / 2;
+        const points = [
+            { x: cx - halfWidth, y: cy - halfHeight, num: 1 },
+            { x: cx + halfWidth, y: cy - halfHeight, num: 2 },
+            { x: cx + halfWidth, y: cy + halfHeight, num: 3 },
+            { x: cx - halfWidth, y: cy + halfHeight, num: 4 }
+        ];
+        const lengths = [width, height, width, height];
+        const lines = lengths.map(function(length, index) {
+            const from = index + 1;
+            const to = index === 3 ? 1 : index + 2;
+            return {
+                id: index + 1, from, to, direction: 'right', lineType: 'line',
+                elements: [{ type: 'number', value: length }],
+                code: 'right\nline\n' + length.toFixed(2),
+                length, isClosing: index === 3, isDiagonal: false,
+                dimensionVisible: true, dimensionRotated: false
+            };
+        });
+        return { points, lines, dimensions: { width, height } };
+    }
+
+    if (type === 'triangle') {
+        const a = Number(values.sideA);
+        const b = Number(values.sideB);
+        const c = Number(values.sideC);
+        if (![a, b, c].every(function(value) { return Number.isFinite(value) && value > 0; })) return null;
+        if (a + b <= c || a + c <= b || b + c <= a) return null;
+        const px = (b * b - c * c + a * a) / (2 * a);
+        const py = Math.sqrt(Math.max(0, b * b - px * px));
+        const baseOffset = a * SCALE / 2;
+        const points = [
+            { x: cx - baseOffset, y: cy + py * SCALE / 2, num: 1 },
+            { x: cx + baseOffset, y: cy + py * SCALE / 2, num: 2 },
+            { x: cx - baseOffset + px * SCALE, y: cy + py * SCALE / 2 - py * SCALE, num: 3 }
+        ];
+        const lengths = [a, c, b];
+        const linePairs = [[1, 2], [2, 3], [3, 1]];
+        const lines = lengths.map(function(length, index) {
+            const pair = linePairs[index];
+            return {
+                id: index + 1, from: pair[0], to: pair[1], direction: 'right', lineType: 'line',
+                elements: [{ type: 'number', value: length }],
+                code: 'right\nline\n' + length.toFixed(2),
+                length, isClosing: index === 2, isDiagonal: false,
+                dimensionVisible: true, dimensionRotated: false
+            };
+        });
+        return { points, lines, dimensions: { sideA: a, sideB: b, sideC: c } };
+    }
+
+    if (type === 'trapezoid') {
+        const top = Number(values.top);
+        const bottom = Number(values.bottom);
+        const height = Number(values.height);
+        if (![top, bottom, height].every(function(value) { return Number.isFinite(value) && value > 0; })) return null;
+        const halfHeight = height * SCALE / 2;
+        const points = [
+            { x: cx - bottom * SCALE / 2, y: cy + halfHeight, num: 1 },
+            { x: cx + bottom * SCALE / 2, y: cy + halfHeight, num: 2 },
+            { x: cx + bottom * SCALE / 2 - (bottom - top) * SCALE, y: cy - halfHeight, num: 3 },
+            { x: cx - bottom * SCALE / 2, y: cy - halfHeight, num: 4 }
+        ];
+        const difference = Math.abs(bottom - top);
+        const lengths = [bottom, Math.hypot(difference, height), top, height];
+        const linePairs = [[1, 2], [2, 3], [3, 4], [4, 1]];
+        const lines = lengths.map(function(length, index) {
+            const pair = linePairs[index];
+            return {
+                id: index + 1, from: pair[0], to: pair[1], direction: 'right', lineType: 'line',
+                elements: [{ type: 'number', value: length }],
+                code: 'right\nline\n' + length.toFixed(2),
+                length, isClosing: index === 3, isDiagonal: false,
+                dimensionVisible: true, dimensionRotated: false
+            };
+        });
+        return { points, lines, dimensions: { top, bottom, height } };
+    }
+
+    if (type === 'semicircle') {
+        const chord = Number(values.chord);
+        const sagitta = Number(values.sagitta);
+        if (!Number.isFinite(chord) || !Number.isFinite(sagitta) || chord <= 0 || sagitta <= 0 ||
+            sagitta > chord / 2) return null;
+        const halfChord = chord * SCALE / 2;
+        const points = [
+            { x: cx - halfChord, y: cy, num: 1 },
+            { x: cx + halfChord, y: cy, num: 2 }
+        ];
+        const arcLine = {
+            id: 1, from: 1, to: 2, direction: 'right', lineType: 'curve',
+            elements: [{ type: 'number', value: chord }, { type: 'number', value: sagitta }],
+            code: 'right\ncurve\n' + chord.toFixed(2) + '\n' + sagitta.toFixed(2),
+            length: chord, isClosing: false, isDiagonal: false,
+            dimensionVisible: true, dimensionRotated: false
+        };
+        const chordLine = {
+            id: 2, from: 2, to: 1, direction: 'right', lineType: 'line',
+            elements: [{ type: 'number', value: chord }],
+            code: 'right\nline\n' + chord.toFixed(2),
+            length: chord, isClosing: true, isDiagonal: false,
+            dimensionVisible: true, dimensionRotated: false
+        };
+        return { points, lines: [arcLine, chordLine], dimensions: { chord, sagitta } };
+    }
+
+    if (type === 'quarter') {
+        const sideA = Number(values.sideA);
+        const sideB = Number(values.sideB);
+        if (![sideA, sideB].every(function(value) { return Number.isFinite(value) && value > 0; })) return null;
+        const radius = (sideA + sideB) / 2;
+        const chord = Math.sqrt(sideA * sideA + sideB * sideB);
+        const sagitta = radius - radius / Math.sqrt(2);
+        const points = [
+            { x: cx - sideA * SCALE / 2, y: cy + sideB * SCALE / 2, num: 1 },
+            { x: cx + sideA * SCALE / 2, y: cy + sideB * SCALE / 2, num: 2 },
+            { x: cx - sideA * SCALE / 2, y: cy - sideB * SCALE / 2, num: 3 }
+        ];
+        const lines = [
+            {
+                id: 1, from: 1, to: 2, direction: 'right', lineType: 'line',
+                elements: [{ type: 'number', value: sideA }],
+                code: 'right\nline\n' + sideA.toFixed(2),
+                length: sideA, isClosing: false, isDiagonal: false,
+                dimensionVisible: true, dimensionRotated: false
+            },
+            {
+                id: 2, from: 2, to: 3, direction: 'right', lineType: 'curve',
+                elements: [{ type: 'number', value: chord }, { type: 'number', value: sagitta }],
+                code: 'right\ncurve\n' + chord.toFixed(2) + '\n' + sagitta.toFixed(2),
+                length: chord, isClosing: false, isDiagonal: false,
+                dimensionVisible: true, dimensionRotated: false
+            },
+            {
+                id: 3, from: 3, to: 1, direction: 'right', lineType: 'line',
+                elements: [{ type: 'number', value: sideB }],
+                code: 'right\nline\n' + sideB.toFixed(2),
+                length: sideB, isClosing: true, isDiagonal: false,
+                dimensionVisible: true, dimensionRotated: false
+            }
+        ];
+        return { points, lines, dimensions: { sideA, sideB } };
+    }
+    return null;
+};
+
+window._buildBoundConstructFigureGeometry = function (parentItem, binding, figureType, values, lineInfo) {
+    let x1, y1, x2, y2, lineLengthPx;
+    if (lineInfo) {
+        x1 = lineInfo.x1; y1 = lineInfo.y1;
+        x2 = lineInfo.x2; y2 = lineInfo.y2;
+    } else {
+        const hostLine = (parentItem.figureLines || []).find(function(lineData) {
+            return lineData.id === binding.hostLineId;
+        });
+        if (!hostLine) return null;
+        const from = (parentItem.shapePoints || []).find(function(point) {
+            return point.num === hostLine.from;
+        });
+        const to = hostLine.isClosing
+            ? (parentItem.shapePoints || []).find(function(point) { return point.num === 1; })
+            : (parentItem.shapePoints || []).find(function(point) { return point.num === hostLine.to; });
+        if (!from || !to) return null;
+        const offsetX = parentItem._anchorOnCanvas
+            ? parentItem._anchorOnCanvas.x - START_X
+            : (parentItem._offsetX || 0);
+        const offsetY = parentItem._anchorOnCanvas
+            ? parentItem._anchorOnCanvas.y - START_Y
+            : (parentItem._offsetY || 0);
+        x1 = from.x + offsetX; y1 = from.y + offsetY;
+        x2 = to.x + offsetX; y2 = to.y + offsetY;
+    }
+    lineLengthPx = Math.hypot(x2 - x1, y2 - y1);
+    if (!Number.isFinite(lineLengthPx) || lineLengthPx <= 0) return null;
+    const parentLength = typeof _getLineBoundFigureLength === 'function'
+        ? _getLineBoundFigureLength(parentItem, binding.hostLineId)
+        : lineLengthPx / SCALE;
+    if (!Number.isFinite(parentLength) || parentLength <= 0) return null;
+
+    const local = window._buildConstructFigureGeometry(figureType, values, { x: 0, y: 0 });
+    if (!local || local.points.length < 2) return null;
+    const localBase1 = local.points[0];
+    const localBase2 = local.points[1];
+    const localBaseDx = localBase2.x - localBase1.x;
+    const localBaseDy = localBase2.y - localBase1.y;
+    const localBaseLength = Math.hypot(localBaseDx, localBaseDy);
+    if (localBaseLength <= 0) return null;
+
+    const pxPerMeter = lineLengthPx / parentLength;
+    const startMeters = binding.reverseReference
+        ? parentLength - binding.end
+        : binding.start;
+    const endMeters = binding.reverseReference
+        ? parentLength - binding.start
+        : binding.end;
+    const hostDx = x2 - x1;
+    const hostDy = y2 - y1;
+    const hostLength = Math.hypot(hostDx, hostDy);
+    const ux = hostDx / hostLength;
+    const uy = hostDy / hostLength;
+    const px = uy;
+    const py = -ux;
+    const side = binding.side === -1 ? -1 : 1;
+    const offsetPx = Number(binding.offset || 0) * SCALE;
+    const baseCenterMeter = (startMeters + endMeters) / 2;
+    const hostCenter = {
+        x: x1 + ux * baseCenterMeter * pxPerMeter + px * offsetPx * side,
+        y: y1 + uy * baseCenterMeter * pxPerMeter + py * offsetPx * side
+    };
+    const hostBaseLength = (endMeters - startMeters) * pxPerMeter;
+    const hostBase1 = {
+        x: x1 + ux * startMeters * pxPerMeter + px * offsetPx * side,
+        y: y1 + uy * startMeters * pxPerMeter + py * offsetPx * side
+    };
+    const hostBase2 = {
+        x: x1 + ux * endMeters * pxPerMeter + px * offsetPx * side,
+        y: y1 + uy * endMeters * pxPerMeter + py * offsetPx * side
+    };
+    const hostBaseDx = hostBase2.x - hostBase1.x;
+    const hostBaseDy = hostBase2.y - hostBase1.y;
+    const hostBaseLengthActual = Math.hypot(hostBaseDx, hostBaseDy);
+    if (hostBaseLengthActual <= 0) return null;
+
+    const localBaseCenter = {
+        x: (localBase1.x + localBase2.x) / 2,
+        y: (localBase1.y + localBase2.y) / 2
+    };
+    const localAngle = Math.atan2(localBaseDy, localBaseDx);
+    const hostAngle = Math.atan2(hostBaseDy, hostBaseDx);
+    const angle = hostAngle - localAngle;
+    const scale = hostBaseLengthActual / localBaseLength;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    const points = local.points.map(function(point) {
+        const rx = point.x - localBaseCenter.x;
+        const ry = point.y - localBaseCenter.y;
+        const sx = rx * cos - ry * sin;
+        const sy = rx * sin + ry * cos;
+        return {
+            x: hostCenter.x + sx * scale,
+            y: hostCenter.y + sy * scale,
+            num: point.num
+        };
+    });
+    return { points, lines: local.lines };
+};
+
+function _placeConstructFigure(clientX, clientY, params, figureType) {
     if (!_cActiveSvg) return false;
     const bounds = _cActiveSvg.getBoundingClientRect();
     if (clientX < bounds.left || clientX > bounds.right ||
@@ -515,47 +799,59 @@ function _placeConstructFigure(clientX, clientY, params) {
         return false;
     }
 
-    const width = params ? params.width : CONSTRUCT_FIGURE_SIZE_M;
-    const height = params ? params.height : CONSTRUCT_FIGURE_SIZE_M;
-    const halfWidth = width * SCALE / 2;
-    const halfHeight = height * SCALE / 2;
-    const points = [
-        { x: center.x - halfWidth, y: center.y - halfHeight, num: 1 },
-        { x: center.x + halfWidth, y: center.y - halfHeight, num: 2 },
-        { x: center.x + halfWidth, y: center.y + halfHeight, num: 3 },
-        { x: center.x - halfWidth, y: center.y + halfHeight, num: 4 }
-    ];
-    const lengths = [width, height, width, height];
-    const lines = lengths.map(function(length, index) {
-        const from = index + 1;
-        const to = index === 3 ? 1 : index + 2;
-        return {
-            id: index + 1,
-            from,
-            to,
-            direction: 'right',
-            lineType: 'line',
-            elements: [{ type: 'number', value: length }],
-            code: 'right\nline\n' + length.toFixed(2),
-            length,
-            isClosing: index === 3,
-            isDiagonal: false,
-            dimensionVisible: true,
-            dimensionRotated: false
-        };
-    });
+    const type = figureType || 'rectangle';
+    const values = params || {};
+    if (type === 'rectangle') {
+        values.width = values.width ?? CONSTRUCT_FIGURE_SIZE_M;
+        values.height = values.height ?? CONSTRUCT_FIGURE_SIZE_M;
+    } else if (type === 'triangle') {
+        values.sideA = values.sideA ?? 3;
+        values.sideB = values.sideB ?? 3;
+        values.sideC = values.sideC ?? 3;
+    } else if (type === 'trapezoid') {
+        values.top = values.top ?? 3;
+        values.bottom = values.bottom ?? 3;
+        values.height = values.height ?? 3;
+    } else if (type === 'semicircle') {
+        values.chord = values.chord ?? 3;
+        values.sagitta = values.sagitta ?? 1.5;
+    } else if (type === 'quarter') {
+        values.sideA = values.sideA ?? 3;
+        values.sideB = values.sideB ?? 3;
+    }
+    const geometry = window._buildConstructFigureGeometry(type, values, center);
+    if (!geometry) {
+        showToast('Некоректні розміри фігури', 'warning');
+        return false;
+    }
+    const points = geometry.points;
+    const lines = geometry.lines;
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     _cActiveSvg.appendChild(group);
 
     const item = addToHierarchy({
-        name: 'Фігура',
-        area: (width * height).toFixed(1),
+        name: type === 'rectangle' ? 'Прямокутник'
+            : type === 'triangle' ? 'Трикутник'
+            : type === 'trapezoid' ? 'Трапеція'
+            : type === 'semicircle' ? 'Півкруг'
+            : 'Четвертькруг',
+        area: typeof calculateFigureArea === 'function'
+            ? calculateFigureArea(lines, points).toFixed(1)
+            : '0',
         figureLines: lines,
         shapePoints: points,
         svgGroup: group,
         constructFigure: true,
-        constructWidth: width,
-        constructHeight: height
+        constructType: type,
+        constructWidth: geometry.dimensions.width ?? geometry.dimensions.sideA ?? 3,
+        constructHeight: geometry.dimensions.height ?? geometry.dimensions.sideB ?? 3,
+        constructSideA: geometry.dimensions.sideA,
+        constructSideB: geometry.dimensions.sideB,
+        constructSideC: geometry.dimensions.sideC,
+        constructTop: geometry.dimensions.top,
+        constructBottom: geometry.dimensions.bottom,
+        constructChord: geometry.dimensions.chord,
+        constructSagitta: geometry.dimensions.sagitta
     });
     group.setAttribute('data-hierarchy-id', item.id);
     item._offsetX = 0;
@@ -567,7 +863,7 @@ function _placeConstructFigure(clientX, clientY, params) {
     return true;
 }
 
-function _placeBoundFigure(lineInfo, params) {
+function _placeBoundFigure(lineInfo, params, figureType) {
     const parentItem = lineInfo.item;
     const hostLine = lineInfo.lineData;
     if (!parentItem || !hostLine || typeof _buildLineBoundFigureGeometry !== 'function') return false;
@@ -576,6 +872,101 @@ function _placeBoundFigure(lineInfo, params) {
     if (!Number.isFinite(lineLength) || lineLength <= 0) {
         showToast('Не вдалося визначити довжину лінії прив’язки', 'error');
         return false;
+    }
+
+    const type = figureType || 'rectangle';
+    if (type !== 'rectangle') {
+        const values = params || {};
+        if (type === 'triangle') {
+            values.sideA = values.sideA ?? 3;
+            values.sideB = values.sideB ?? 3;
+            values.sideC = values.sideC ?? 3;
+        } else if (type === 'trapezoid') {
+            values.top = values.top ?? 3;
+            values.bottom = values.bottom ?? 3;
+            values.height = values.height ?? 3;
+        } else if (type === 'semicircle') {
+            values.chord = values.chord ?? 3;
+            values.sagitta = values.sagitta ?? 1.5;
+        } else {
+            values.sideA = values.sideA ?? 3;
+            values.sideB = values.sideB ?? 3;
+        }
+        const baseSize = type === 'triangle' ? values.sideA
+            : type === 'trapezoid' ? values.bottom
+            : type === 'semicircle' ? values.chord
+            : values.sideA;
+        const width = Math.min(baseSize, Math.floor(lineLength * 100) / 100);
+        if (width <= 0) {
+            showToast('Лінія закоротка для прив’язаної фігури', 'warning');
+            return false;
+        }
+        if (type === 'triangle') values.sideA = width;
+        if (type === 'trapezoid') values.bottom = width;
+        if (type === 'semicircle') values.chord = width;
+        if (type === 'quarter') values.sideA = width;
+
+        const dropFraction = Number.isFinite(lineInfo.dropFraction)
+            ? Math.max(0, Math.min(1, lineInfo.dropFraction))
+            : 0.5;
+        const center = dropFraction * lineLength;
+        const maxStart = Math.floor((lineLength - width) * 100) / 100;
+        const start = params
+            ? params.start
+            : Math.max(0, Math.min(maxStart, window.normalizeMeasurement(center - width / 2)));
+        const end = window.normalizeMeasurement(start + width);
+        const binding = {
+            hostLineId: hostLine.id,
+            start,
+            end,
+            offset: params ? params.offset : 0,
+            reverseReference: params ? params.reverseReference : false,
+            side: params ? params.side : _getBoundFigureSide(lineInfo)
+        };
+        const geometry = window._buildBoundConstructFigureGeometry
+            ? window._buildBoundConstructFigureGeometry(parentItem, binding, type, values)
+            : null;
+        if (!geometry) {
+            showToast('Не вдалося створити прив’язану фігуру', 'error');
+            return false;
+        }
+        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        _cActiveSvg.appendChild(group);
+        const name = type === 'triangle' ? 'Трикутник'
+            : type === 'trapezoid' ? 'Трапеція'
+            : type === 'semicircle' ? 'Півкруг'
+            : 'Четвертькруг';
+        const item = addToHierarchy({
+            name,
+            area: typeof calculateFigureArea === 'function'
+                ? calculateFigureArea(geometry.lines, geometry.points).toFixed(1)
+                : '0',
+            figureLines: geometry.lines,
+            shapePoints: geometry.points,
+            svgGroup: group,
+            parentId: parentItem.id,
+            constructFigure: true,
+            constructType: type,
+            constructWidth: width,
+            constructHeight: type === 'trapezoid' ? values.height : values.sideB ?? 3,
+            constructSideA: values.sideA,
+            constructSideB: values.sideB,
+            constructSideC: values.sideC,
+            constructTop: values.top,
+            constructBottom: values.bottom,
+            constructChord: values.chord,
+            constructSagitta: values.sagitta
+        });
+        item._figureBinding = binding;
+        item._offsetX = 0;
+        item._offsetY = 0;
+        group.setAttribute('data-hierarchy-id', item.id);
+        _redrawItemSvgGroup(item);
+        if (typeof _refreshFigureAreaAncestors === 'function') _refreshFigureAreaAncestors(item);
+        _syncHierarchyToCanvas();
+        _selectDroppedConstructItem(item);
+        showToast(name + ' прив’язано до лінії', 'success');
+        return true;
     }
 
     const width = params
@@ -616,7 +1007,7 @@ function _placeBoundFigure(lineInfo, params) {
     _cActiveSvg.appendChild(group);
 
     const item = addToHierarchy({
-        name: 'Фігура',
+        name: 'Прямокутник',
         area: typeof calculateFigureArea === 'function'
             ? calculateFigureArea(geometry.lines, geometry.points).toFixed(1)
             : (geometry.width * geometry.height).toFixed(1),
@@ -625,6 +1016,7 @@ function _placeBoundFigure(lineInfo, params) {
         svgGroup: group,
         parentId: parentItem.id,
         constructFigure: true,
+        constructType: 'rectangle',
         constructWidth: geometry.width,
         constructHeight: geometry.height
     });
